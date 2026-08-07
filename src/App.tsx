@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { SurveyScreen } from './screens/SurveyScreen';
 import { HuntScreen } from './screens/HuntScreen';
 import { useScanner, Contact } from './lib/useScanner';
+import { useWakeLock } from './lib/useWakeLock';
 
 export default function App() {
   const {
@@ -19,6 +20,10 @@ export default function App() {
   } = useScanner();
 
   const [target, setTarget] = useState<{ id: string; name: string | null } | null>(null);
+
+  // Keep the screen alive while a hunt is running — you are looking at it
+  // while walking, not touching it.
+  useWakeLock(scanning);
 
   // No effect restarts the scan here on purpose: both Bluetooth entry points
   // need a user gesture, and stopping now clears the store, so there is never

@@ -1,0 +1,25 @@
+{
+  "name": "WARMER — Signal Hunt",
+  "short_name": "WARMER",
+  "description": "Turns Bluetooth signal strength into a warmer/colder trail so you can walk down a lost device.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070B10",
+  "theme_color": "#070B10",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

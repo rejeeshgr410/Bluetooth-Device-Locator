@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="WARMER">
+  <rect width="512" height="512" fill="#070B10"/>
+  <!-- Concentric rings: signal getting warmer toward the centre. -->
+  <circle cx="256" cy="256" r="188" fill="none" stroke="#FFB000" stroke-width="10" opacity="0.20"/>
+  <circle cx="256" cy="256" r="142" fill="none" stroke="#FFB000" stroke-width="12" opacity="0.38"/>
+  <circle cx="256" cy="256" r="96" fill="none" stroke="#FFB000" stroke-width="14" opacity="0.62"/>
+  <circle cx="256" cy="256" r="50" fill="none" stroke="#FFB000" stroke-width="16" opacity="0.85"/>
+  <circle cx="256" cy="256" r="17" fill="#FFB000"/>
+</svg>

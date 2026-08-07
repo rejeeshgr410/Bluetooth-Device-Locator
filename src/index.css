@@ -1,0 +1,87 @@
+:root {
+  --c-ink: #070B10;
+  --c-ink-raised: #0E141C;
+  --c-hairline: #1B242F;
+  --c-amber: #FFB000;
+  --c-amber-dim: #6A4A08;
+  --c-warm: #63E6E2;
+  --c-cold: #5B6B7C;
+  --c-text: #E8EDF2;
+  --c-muted: #7C8B9A;
+  --c-alarm: #FF5A47;
+
+  --font-mono: 'JetBrains Mono', Menlo, monospace;
+  --font-sans: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  background-color: var(--c-ink);
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
+  line-height: 1.5;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Base Utility Classes */
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+.text-amber { color: var(--c-amber); }
+.text-amber-dim { color: var(--c-amber-dim); }
+.text-warm { color: var(--c-warm); }
+.text-cold { color: var(--c-cold); }
+.text-muted { color: var(--c-muted); }
+.text-alarm { color: var(--c-alarm); }
+.text-hairline { color: var(--c-hairline); }
+
+/* Buttons & Inputs */
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+}
+
+input {
+  font-family: inherit;
+  outline: none;
+}
+
+/* Custom Scrollbar for sleek dark look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--c-ink);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--c-hairline);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--c-muted);
+}

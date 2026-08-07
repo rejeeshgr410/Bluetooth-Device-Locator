@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Warmer",
+    "slug": "warmer",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "warmer",
+    "ios": {
+      "bundleIdentifier": "com.example.warmer",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Warmer reads the signal strength of nearby Bluetooth devices so you can walk toward the one you lost.",
+        "UIBackgroundModes": ["audio"]
+      }
+    },
+    "android": {
+      "package": "com.example.warmer",
+      "permissions": [
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-dev-client",
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": ["peripheral", "central"],
+          "bluetoothAlwaysPermission": "Warmer reads the signal strength of nearby Bluetooth devices so you can walk toward the one you lost."
+        }
+      ],
+      [
+        "expo-build-properties",
+        { "android": { "minSdkVersion": 24 } }
+      ]
+    ]
+  }
+}

@@ -16,18 +16,35 @@ export type Contact = {
 
 /**
  * Where readings are coming from.
- *  - 'scan'      real radio, every advertiser in range (requestLEScan)
- *  - 'single'    real radio, one device the user picked (requestDevice)
- *  - 'simulator' fabricated, no radio involved
+ *  - 'scan'        real radio, every advertiser in range (requestLEScan)
+ *  - 'single'      real radio, one device the user picked (watchAdvertisements)
+ *  - 'unsupported' radio present, but no way to read RSSI over time
+ *  - 'simulator'   fabricated, no radio involved
  */
-export type ScanMode = 'scan' | 'single' | 'simulator';
+export type ScanMode = 'scan' | 'single' | 'unsupported' | 'simulator';
 
 export type Capability = {
   /** navigator.bluetooth exists at all. */
   bluetooth: boolean;
   /** requestLEScan exists, so we can hear every device rather than one. */
   leScan: boolean;
+  /**
+   * watchAdvertisements exists, so a chosen device's RSSI can be followed.
+   * Without this there is no continuous signal strength on the web at all —
+   * requestDevice alone gives you a device handle, not a changing number.
+   */
+  advertisements: boolean;
 };
+
+/**
+ * Detectable before any chooser is shown, which matters: the previous build
+ * only discovered this after the user had already picked a device.
+ */
+function supportsAdvertisements(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ctor = (window as unknown as { BluetoothDevice?: { prototype: object } }).BluetoothDevice;
+  return !!ctor && 'watchAdvertisements' in ctor.prototype;
+}
 
 const TAPE_LENGTH = 90;
 
@@ -49,7 +66,11 @@ export function useScanner() {
   const [contacts, setContacts] = useState<Record<string, Contact>>({});
   const [scanning, setScanning] = useState(false);
   const [isSimulator, setIsSimulator] = useState(false);
-  const [capability, setCapability] = useState<Capability>({ bluetooth: false, leScan: false });
+  const [capability, setCapability] = useState<Capability>({
+    bluetooth: false,
+    leScan: false,
+    advertisements: false,
+  });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -69,6 +90,7 @@ export function useScanner() {
     const cap: Capability = {
       bluetooth: !!bt,
       leScan: !!bt && typeof bt.requestLEScan === 'function',
+      advertisements: !!bt && supportsAdvertisements(),
     };
     setCapability(cap);
     if (!cap.bluetooth) setIsSimulator(true); // nothing else this browser can do
@@ -80,7 +102,8 @@ export function useScanner() {
    */
   const mode: ScanMode = useMemo(() => {
     if (isSimulator || !capability.bluetooth) return 'simulator';
-    return capability.leScan ? 'scan' : 'single';
+    if (capability.leScan) return 'scan';
+    return capability.advertisements ? 'single' : 'unsupported';
   }, [isSimulator, capability]);
 
   // Push the store into React state, but only when something actually changed.
@@ -195,6 +218,13 @@ export function useScanner() {
     const bt = navigator.bluetooth;
     if (!bt) {
       setError('This browser has no Web Bluetooth. Switch on the simulator to see how the app behaves.');
+      return;
+    }
+
+    // Known up front, so we never send anyone through a device chooser that
+    // cannot lead anywhere.
+    if (mode === 'unsupported') {
+      setError('This browser cannot follow a device’s signal strength, so there is nothing to listen to.');
       return;
     }
 

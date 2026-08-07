@@ -21,6 +21,7 @@ interface SurveyScreenProps {
 const START_LABEL: Record<ScanMode, string> = {
   scan: 'START LISTENING',
   single: 'CHOOSE A DEVICE',
+  unsupported: 'CANNOT LISTEN',
   simulator: 'START SIMULATION',
 };
 
@@ -29,6 +30,8 @@ const IDLE_COPY: Record<ScanMode, string> = {
     'Tap START LISTENING to hear every Bluetooth device advertising nearby, sorted by signal strength.',
   single:
     'This browser can track one device at a time. Tap CHOOSE A DEVICE, pick your target from the browser’s list, and its signal will be tracked from there.',
+  unsupported:
+    'This browser cannot follow a signal as it changes, so there is nothing for WARMER to read. Switch on the simulator to see how the app works.',
   simulator:
     'Simulator mode. Tap START SIMULATION to walk through the app against five invented devices — no radio is involved and no reading is real.',
 };
@@ -36,8 +39,11 @@ const IDLE_COPY: Record<ScanMode, string> = {
 const LISTENING_COPY: Record<ScanMode, string> = {
   scan: 'Listening for advertising packets… Make sure Bluetooth and Location are switched on.',
   single: 'Waiting for advertising packets from the device you picked…',
+  unsupported: 'Nothing to listen to on this browser.',
   simulator: 'Generating invented readings for five fictional devices…',
 };
+
+const EXPERIMENTAL_FLAG = 'chrome://flags/#enable-experimental-web-platform-features';
 
 export const SurveyScreen: React.FC<SurveyScreenProps> = ({
   contacts,
@@ -114,7 +120,52 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
         </div>
       )}
 
-      {/* Single-device explainer: this browser genuinely cannot enumerate devices. */}
+      {/*
+        Capability banner. Exactly one shows, and it reflects what was detected
+        before any chooser appeared — the previous build stacked an optimistic
+        "pick a device" banner on top of an error saying that could not work.
+      */}
+      {mode === 'unsupported' && (
+        <div
+          style={{
+            padding: '16px',
+            backgroundColor: 'var(--c-ink-raised)',
+            borderLeft: '3px solid var(--c-alarm)',
+            marginBottom: '16px',
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '12px',
+          }}
+        >
+          <AlertTriangle size={18} color="var(--c-alarm)" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div style={{ fontSize: '13px', color: 'var(--c-dim)', lineHeight: 1.6 }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '2px', color: 'var(--c-alarm)', marginBottom: '6px' }}>
+              SIGNAL TRACKING UNAVAILABLE
+            </div>
+            This browser can see Bluetooth devices but cannot follow how strong their signal is —
+            which is the one thing WARMER needs. That is a browser limitation, not a fault in your
+            phone or your Bluetooth.
+            <div style={{ marginTop: '10px' }}>
+              To enable it in Chrome or Edge, switch on{' '}
+              <span
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '12px',
+                  color: 'var(--c-amber)',
+                  wordBreak: 'break-all',
+                }}
+              >
+                {EXPERIMENTAL_FLAG}
+              </span>{' '}
+              and restart the browser. Otherwise, switch on the simulator below to see how the app
+              works.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Single-device: RSSI is readable, but only for one chosen device. */}
       {mode === 'single' && (
         <div
           style={{
@@ -131,12 +182,19 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
           <Bluetooth size={18} color="var(--c-amber)" style={{ flexShrink: 0, marginTop: '2px' }} />
           <div style={{ fontSize: '13px', color: 'var(--c-dim)', lineHeight: 1.5 }}>
             <strong style={{ color: 'var(--c-text)' }}>One device at a time.</strong> This browser will
-            not list everything in range — only the device you pick from its own chooser. For a full
-            sweep you need Chrome with{' '}
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--c-amber)' }}>
-              #enable-experimental-web-platform-features
+            not list everything in range — only the device you pick from its own chooser. A full sweep
+            needs{' '}
+            <span
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: '12px',
+                color: 'var(--c-amber)',
+                wordBreak: 'break-all',
+              }}
+            >
+              {EXPERIMENTAL_FLAG}
             </span>{' '}
-            switched on.
+            switched on as well.
           </div>
         </div>
       )}
@@ -183,13 +241,19 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
       <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
         <button
           onClick={scanning ? onStop : onStart}
+          disabled={mode === 'unsupported'}
+          title={
+            mode === 'unsupported'
+              ? 'This browser cannot follow a signal as it changes'
+              : undefined
+          }
           style={{
             flex: 2,
             padding: '14px 20px',
             borderRadius: '4px',
-            border: '1px solid var(--c-amber)',
+            border: `1px solid ${mode === 'unsupported' ? 'var(--c-hairline)' : 'var(--c-amber)'}`,
             backgroundColor: scanning ? 'var(--c-amber)' : 'transparent',
-            color: scanning ? 'var(--c-ink)' : 'var(--c-amber)',
+            color: scanning ? 'var(--c-ink)' : mode === 'unsupported' ? 'var(--c-dim)' : 'var(--c-amber)',
             fontWeight: 700,
             letterSpacing: '2px',
             fontSize: '13px',
@@ -199,6 +263,7 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             gap: '8px',
             transition: 'all 150ms ease-out',
             minWidth: '160px',
+            opacity: mode === 'unsupported' ? 0.55 : 1,
           }}
         >
           <Radio size={16} />

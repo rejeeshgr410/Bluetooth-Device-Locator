@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { SafeAreaView, StatusBar, StyleSheet } from 'react-native';
 import { State } from 'react-native-ble-plx';
 import { SurveyScreen } from './src/screens/SurveyScreen';
@@ -10,11 +10,10 @@ export default function App() {
   const { contacts, scanning, radio, error, start, stop } = useScanner();
   const [target, setTarget] = useState<{ id: string; name: string | null } | null>(null);
 
-  // Scanning must keep running while hunting — the hunt screen reads from the
-  // same stream rather than opening a second one.
-  useEffect(() => {
-    if (target && !scanning) start();
-  }, [target, scanning, start]);
+  // No restart-on-select effect here. start() wipes the store before rescanning,
+  // so picking a device while stopped used to erase the very contact just picked
+  // and drop the hunt screen straight into NO CONTACT. Stopping now clears the
+  // list, so there is no stale row left to select in the first place.
 
   return (
     <SafeAreaView style={styles.root}>

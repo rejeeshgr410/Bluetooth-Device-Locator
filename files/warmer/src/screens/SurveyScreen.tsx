@@ -71,7 +71,7 @@ export function SurveyScreen({
         value={filter}
         onChangeText={setFilter}
         placeholder="Filter by name"
-        placeholderTextColor={c.hairline}
+        placeholderTextColor={c.dim}
         style={styles.input}
         autoCapitalize="none"
         autoCorrect={false}
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14 },
   rowBody: { flex: 1 },
-  rowMeta: { fontSize: 11, color: c.hairline, marginTop: 3, letterSpacing: 0.4 },
+  rowMeta: { fontSize: 11, color: c.dim, marginTop: 3, letterSpacing: 0.4 },
   rowMeter: { width: 46, height: 3, backgroundColor: c.hairline },
   rowMeterFill: { height: 3, backgroundColor: c.amber },
   rowRssi: { fontFamily: mono, fontSize: 19 },

@@ -8,13 +8,21 @@ import { Platform } from 'react-native';
 export const c = {
   ink: '#070B10',
   inkRaised: '#0E141C',
+  /**
+   * Rules and borders ONLY. As a text colour this measures 1.26:1 on ink,
+   * which is not dim, it is absent. Small print goes on `dim`.
+   */
   hairline: '#1B242F',
   amber: '#FFB000',
-  amberDim: '#6A4A08',
+  /** Stale readout. 3.68:1 on ink — dimmed, but still readable, which is
+   *  the whole point at the moment contact is lost. */
+  amberDim: '#8A6410',
   warm: '#63E6E2',
   cold: '#5B6B7C',
   text: '#E8EDF2',
   muted: '#7C8B9A',
+  /** Small labels and secondary copy. 6.35:1 on inkRaised. */
+  dim: '#8A99A8',
   alarm: '#FF5A47',
 };
 

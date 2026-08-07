@@ -62,6 +62,6 @@ const styles = StyleSheet.create({
     top: -13,
     fontFamily: mono,
     fontSize: 9,
-    color: c.hairline,
+    color: c.dim,
   },
 });

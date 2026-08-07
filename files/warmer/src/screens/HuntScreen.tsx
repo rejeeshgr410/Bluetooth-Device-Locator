@@ -27,7 +27,7 @@ export function HuntScreen({
   const [sound, setSound] = useState(true);
   const [haptics, setHaptics] = useState(true);
   const [now, setNow] = useState(Date.now());
-  const best = useRef<number | null>(null);
+  const [best, setBest] = useState<number | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 250);
@@ -38,7 +38,11 @@ export function HuntScreen({
   const stale = !contact || now - contact.lastSeen > STALE_AFTER_MS;
   const live = stale ? null : contact!.rssi;
 
-  if (live !== null && (best.current === null || live > best.current)) best.current = live;
+  // In an effect, not mutated during render: writing a ref while rendering is
+  // a rules-of-React violation that misbehaves under StrictMode.
+  useEffect(() => {
+    if (live !== null) setBest((b) => (b === null || live > b ? live : b));
+  }, [live]);
 
   const t = useMemo(() => (contact ? trend(contact.history) : 'steady'), [contact?.history]);
   useClicker({ rssi: live, active: !stale, sound, haptics });
@@ -95,7 +99,7 @@ export function HuntScreen({
             </Text>
             <View style={styles.stats}>
               <Stat label="ROUGH RANGE" value={live === null ? '—' : roughRange(live)} />
-              <Stat label="BEST SEEN" value={best.current === null ? '—' : `${best.current.toFixed(0)} dBm`} />
+              <Stat label="BEST SEEN" value={best === null ? '—' : `${best.toFixed(0)} dBm`} />
               <Stat label="PACKETS" value={String(contact?.packets ?? 0)} />
             </View>
           </View>
@@ -220,7 +224,7 @@ const styles = StyleSheet.create({
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 26 },
   back: { ...type.eyebrow, color: c.amber },
   name: { fontSize: 26, color: c.text, fontWeight: '600' },
-  id: { fontFamily: mono, fontSize: 11, color: c.hairline, marginTop: 4 },
+  id: { fontFamily: mono, fontSize: 11, color: c.muted, marginTop: 4 },
   readout: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 18, marginBottom: 6 },
   segment: { flexDirection: 'row', gap: 6, marginVertical: 16 },
   seg: {
@@ -245,7 +249,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   stats: { flexDirection: 'row', marginTop: 12, gap: 12 },
-  statLabel: { fontSize: 9, letterSpacing: 1.5, color: c.hairline, fontWeight: '700' },
+  statLabel: { fontSize: 9, letterSpacing: 1.5, color: c.dim, fontWeight: '700' },
   statValue: { fontFamily: mono, fontSize: 14, color: c.text, marginTop: 3 },
   trailButtons: { flexDirection: 'row', gap: 10, marginTop: 14 },
   trailButton: {
@@ -261,5 +265,5 @@ const styles = StyleSheet.create({
   toggles: { flexDirection: 'row', gap: 26, marginTop: 22 },
   toggle: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   toggleLabel: { color: c.text, fontSize: 15 },
-  caveat: { ...type.body, fontSize: 12, marginTop: 26, color: c.hairline, lineHeight: 18 },
+  caveat: { ...type.body, fontSize: 12, marginTop: 26, color: c.dim, lineHeight: 18 },
 });

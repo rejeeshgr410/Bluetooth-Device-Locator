@@ -25,12 +25,18 @@ export function TrackMap({ track, crumbs, estimate, fix, size }: Props) {
       { x: fix.x, y: fix.y },
       ...(crumbs.length ? [{ x: estimate.x, y: estimate.y }] : []),
     ];
-    const xs = points.map((p) => p.x);
-    const ys = points.map((p) => p.y);
-    const minX = Math.min(...xs, -2);
-    const maxX = Math.max(...xs, 2);
-    const minY = Math.min(...ys, -2);
-    const maxY = Math.max(...ys, 2);
+    let minX = -2;
+    let maxX = 2;
+    let minY = -2;
+    let maxY = 2;
+    // A loop rather than Math.min(...xs): the spread form passes one argument
+    // per point, which is a stack overflow waiting for a long enough walk.
+    for (const p of points) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
     const span = Math.max(maxX - minX, maxY - minY, 6) * 1.2;
@@ -159,6 +165,6 @@ const styles = StyleSheet.create({
     bottom: 6,
     fontFamily: mono,
     fontSize: 9,
-    color: c.hairline,
+    color: c.dim,
   },
 });

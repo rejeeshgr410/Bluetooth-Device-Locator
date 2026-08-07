@@ -87,6 +87,11 @@ export function useScanner() {
 
   const stop = useCallback(() => {
     manager.stopDeviceScan();
+    // Clear the store too. Rows are filtered on lastSeen, so without this a
+    // stopped scan still showed devices for another twenty seconds — readings
+    // that are no longer being taken.
+    store.current = {};
+    setContacts({});
     setScanning(false);
   }, [manager]);
 

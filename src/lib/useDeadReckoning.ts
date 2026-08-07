@@ -2,9 +2,32 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 
 export type Fix = { x: number; y: number; heading: number; steps: number };
 
+/**
+ * 'prompt'      iOS 13+: sensors exist but need an explicit, gesture-driven grant
+ * 'granted'     listeners will fire
+ * 'denied'      user said no; dead reckoning cannot work
+ * 'unsupported' no motion sensors at all (most desktops)
+ */
+export type MotionPermission = 'prompt' | 'granted' | 'denied' | 'unsupported';
+
 const STEP_THRESHOLD = 1.14;   // g, peak of a walking bounce
 const STEP_MIN_GAP_MS = 260;   // faster than this is noise
 const STEP_MAX_GAP_MS = 2200;  // slower than this and you stopped walking
+
+/** iOS exposes requestPermission() as a static on the event constructors. */
+type PermissionGated = { requestPermission?: () => Promise<'granted' | 'denied'> };
+
+function gatedMotion(): PermissionGated | undefined {
+  return typeof DeviceMotionEvent !== 'undefined'
+    ? (DeviceMotionEvent as unknown as PermissionGated)
+    : undefined;
+}
+
+function gatedOrientation(): PermissionGated | undefined {
+  return typeof DeviceOrientationEvent !== 'undefined'
+    ? (DeviceOrientationEvent as unknown as PermissionGated)
+    : undefined;
+}
 
 /**
  * Relative position by dead reckoning: count steps, point them in the
@@ -13,23 +36,65 @@ const STEP_MAX_GAP_MS = 2200;  // slower than this and you stopped walking
 export function useDeadReckoning(opts: { active: boolean; stride?: number }) {
   const { active, stride = 0.72 } = opts;
   const [fix, setFix] = useState<Fix>({ x: 0, y: 0, heading: 0, steps: 0 });
-  const [available, setAvailable] = useState<boolean | null>(null);
+  const [permission, setPermission] = useState<MotionPermission>('unsupported');
+  /**
+   * Granted is not the same as working. Desktop Chrome defines
+   * DeviceMotionEvent and needs no grant, then never fires a single event —
+   * which looked identical to "still gathering marks" in the previous build.
+   */
+  const [receiving, setReceiving] = useState(false);
 
+  const lastMotionRef = useRef(0);
   const headingRef = useRef(0);
   const posRef = useRef({ x: 0, y: 0, steps: 0 });
   const smoothedRef = useRef(1);
   const armedRef = useRef(true);
   const lastStepRef = useRef(0);
 
-  // Check Web Device Motion / Orientation availability
+  /**
+   * Note the distinction the previous build missed: `'DeviceMotionEvent' in
+   * window` is true on iOS whether or not the user has granted access, so it
+   * reported the sensors as available while every listener stayed silent.
+   */
   useEffect(() => {
-    const hasMotion = typeof window !== 'undefined' && 'DeviceMotionEvent' in window;
-    setAvailable(hasMotion);
+    const motion = gatedMotion();
+    if (!motion) {
+      setPermission('unsupported');
+      return;
+    }
+    setPermission(typeof motion.requestPermission === 'function' ? 'prompt' : 'granted');
   }, []);
 
-  // Web Motion & Orientation Event Listeners
+  /** Must be called from a user gesture — iOS rejects it otherwise. */
+  const requestAccess = useCallback(async () => {
+    const motion = gatedMotion();
+    const orientation = gatedOrientation();
+
+    if (!motion) {
+      setPermission('unsupported');
+      return;
+    }
+    if (typeof motion.requestPermission !== 'function') {
+      setPermission('granted'); // no gate on this platform
+      return;
+    }
+
+    try {
+      const motionGrant = await motion.requestPermission();
+      // Orientation is a separate grant on iOS. Without it there is no
+      // heading, and steps with no heading are not a position.
+      let orientationGrant: 'granted' | 'denied' = 'granted';
+      if (typeof orientation?.requestPermission === 'function') {
+        orientationGrant = await orientation.requestPermission();
+      }
+      setPermission(motionGrant === 'granted' && orientationGrant === 'granted' ? 'granted' : 'denied');
+    } catch {
+      setPermission('denied');
+    }
+  }, []);
+
   useEffect(() => {
-    if (!active) return;
+    if (!active || permission !== 'granted') return;
 
     function handleOrientation(e: DeviceOrientationEvent) {
       const evt = e as DeviceOrientationEvent & { webkitCompassHeading?: number };
@@ -48,10 +113,11 @@ export function useDeadReckoning(opts: { active: boolean; stride?: number }) {
     }
 
     function handleMotion(e: DeviceMotionEvent) {
+      lastMotionRef.current = Date.now();
       const acc = e.accelerationIncludingGravity || e.acceleration;
       if (!acc || acc.x === null || acc.y === null || acc.z === null) return;
 
-      // Convert m/s^2 to g (divide by 9.81)
+      // Convert m/s^2 to g
       const gx = acc.x / 9.81;
       const gy = acc.y / 9.81;
       const gz = acc.z / 9.81;
@@ -75,25 +141,26 @@ export function useDeadReckoning(opts: { active: boolean; stride?: number }) {
       if (gap > STEP_MAX_GAP_MS) armedRef.current = true;
     }
 
-    if (typeof window !== 'undefined' && 'addEventListener' in window) {
-      window.addEventListener('deviceorientation', handleOrientation);
-      window.addEventListener('devicemotion', handleMotion);
-    }
+    // Give the sensors a grace period before declaring them silent.
+    lastMotionRef.current = Date.now() + 2000;
+
+    window.addEventListener('deviceorientation', handleOrientation);
+    window.addEventListener('devicemotion', handleMotion);
 
     const uiInterval = setInterval(() => {
       setFix({ ...posRef.current, heading: headingRef.current });
+      setReceiving(Date.now() - lastMotionRef.current < 2000);
     }, 200);
 
     return () => {
-      if (typeof window !== 'undefined' && 'removeEventListener' in window) {
-        window.removeEventListener('deviceorientation', handleOrientation);
-        window.removeEventListener('devicemotion', handleMotion);
-      }
+      window.removeEventListener('deviceorientation', handleOrientation);
+      window.removeEventListener('devicemotion', handleMotion);
       clearInterval(uiInterval);
+      setReceiving(false);
     };
-  }, [active, stride]);
+  }, [active, stride, permission]);
 
-  // Manual step trigger for browser simulation/testing
+  /** Manual step trigger for the desktop / simulator walker. */
   const simulateStep = useCallback((headingDegrees?: number) => {
     if (headingDegrees !== undefined) {
       headingRef.current = (headingDegrees + 360) % 360;
@@ -117,5 +184,5 @@ export function useDeadReckoning(opts: { active: boolean; stride?: number }) {
     setFix({ x: 0, y: 0, heading: headingRef.current, steps: 0 });
   }, []);
 
-  return { fix, available, reset, simulateStep, setHeading };
+  return { fix, permission, receiving, requestAccess, reset, simulateStep, setHeading };
 }

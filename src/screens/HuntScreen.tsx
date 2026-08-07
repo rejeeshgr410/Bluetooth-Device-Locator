@@ -4,9 +4,13 @@ import { TrackMap } from '../components/TrackMap';
 import { band, roughRange, trend, STALE_AFTER_MS } from '../lib/signal';
 import { distanceTo, relativeBearing, steer } from '../lib/breadcrumbs';
 import { Contact } from '../lib/useScanner';
+import { MotionPermission } from '../lib/useDeadReckoning';
 import { useClicker } from '../lib/useClicker';
 import { useTrail } from '../lib/useTrail';
-import { ArrowLeft, Volume2, VolumeX, Vibrate, RefreshCw, MapPin, Footprints, ArrowUp, ArrowDown, ArrowLeft as ArrowL, ArrowRight } from 'lucide-react';
+import { ArrowLeft, Volume2, VolumeX, Vibrate, RefreshCw, MapPin, Footprints, ArrowUp, ArrowDown, ArrowLeft as ArrowL, ArrowRight, Compass } from 'lucide-react';
+
+/** iOS has no Vibration API at all, so the toggle must not claim otherwise. */
+const HAPTICS_SUPPORTED = typeof navigator !== 'undefined' && 'vibrate' in navigator;
 
 type Mode = 'meter' | 'trail';
 
@@ -48,7 +52,7 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
   }, [live]);
 
   const t = useMemo(() => (contact ? trend(contact.history) : 'steady'), [contact?.history]);
-  useClicker({ rssi: live, active: !stale, sound, haptics });
+  useClicker({ rssi: live, active: !stale, sound, haptics: haptics && HAPTICS_SUPPORTED });
 
   const trail = useTrail({ rssi: live, active: mode === 'trail' });
 
@@ -266,10 +270,21 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
 
         <button
           onClick={() => setHaptics((v) => !v)}
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--c-text)', fontSize: '14px' }}
+          disabled={!HAPTICS_SUPPORTED}
+          title={HAPTICS_SUPPORTED ? undefined : 'This browser has no Vibration API'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            color: 'var(--c-text)',
+            fontSize: '14px',
+            opacity: HAPTICS_SUPPORTED ? 1 : 0.45,
+          }}
         >
-          <Vibrate size={18} color={haptics ? 'var(--c-amber)' : 'var(--c-muted)'} />
-          <span>Vibration ({haptics ? 'ON' : 'OFF'})</span>
+          <Vibrate size={18} color={haptics && HAPTICS_SUPPORTED ? 'var(--c-amber)' : 'var(--c-muted)'} />
+          <span>
+            Vibration ({!HAPTICS_SUPPORTED ? 'UNSUPPORTED' : haptics ? 'ON' : 'OFF'})
+          </span>
         </button>
       </div>
 
@@ -289,13 +304,79 @@ interface TrailPanelProps {
 }
 
 const TrailPanel: React.FC<TrailPanelProps> = ({ trail, live, isSimulator, onSimWalk }) => {
-  const { fix, crumbs, track, estimate, dropManual, clear } = trail;
+  const { fix, crumbs, track, estimate, dropManual, clear, permission, receiving, requestAccess } = trail;
   const showArrow = crumbs.length >= 2;
   const metres = distanceTo(fix, estimate);
   const rel = relativeBearing(fix, estimate);
 
+  // Granted but silent is its own failure: sensors that exist and report
+  // nothing look exactly like sensors that are working but you stood still.
+  const motionState: 'ok' | MotionPermission | 'silent' =
+    permission !== 'granted' ? permission : receiving ? 'ok' : 'silent';
+  const showMotionCard = !isSimulator && motionState !== 'ok';
+
   return (
     <>
+      {/*
+        Motion access. Without this card, iOS silently produced no steps at
+        all: the sensors are present but gated, so every listener stayed quiet
+        and the panel sat on "GATHERING MARKS" forever with no explanation.
+      */}
+      {showMotionCard && (
+        <div
+          style={{
+            marginBottom: '14px',
+            padding: '16px',
+            backgroundColor: 'var(--c-ink-raised)',
+            borderRadius: '4px',
+            borderLeft: `3px solid ${motionState === 'prompt' ? 'var(--c-amber)' : 'var(--c-alarm)'}`,
+          }}
+        >
+          <div
+            style={{
+              fontSize: '12px',
+              fontWeight: 700,
+              letterSpacing: '2px',
+              color: motionState === 'prompt' ? 'var(--c-amber)' : 'var(--c-alarm)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <Compass size={15} />
+            {motionState === 'prompt' ? 'MOTION ACCESS NEEDED' : 'TRAIL UNAVAILABLE'}
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--c-dim)', marginTop: '8px', lineHeight: 1.5 }}>
+            {motionState === 'prompt' &&
+              'Trail counts your steps and reads your heading to work out where you have been. Neither is sent anywhere.'}
+            {motionState === 'denied' &&
+              'Motion access was declined, so steps and heading cannot be read. Re-enable it in your browser settings for this site, then reload.'}
+            {motionState === 'unsupported' &&
+              'This device has no motion sensors, so there is nothing to dead-reckon with. Use METER mode, or switch on the simulator to try the walker.'}
+            {motionState === 'silent' &&
+              'No motion data is arriving. Trail needs a phone’s accelerometer and compass — on a desktop there is nothing to read. Use METER mode, or switch on the simulator to try the step walker.'}
+          </div>
+          {motionState === 'prompt' && (
+            <button
+              onClick={requestAccess}
+              style={{
+                marginTop: '12px',
+                padding: '10px 16px',
+                borderRadius: '4px',
+                border: '1px solid var(--c-amber)',
+                backgroundColor: 'transparent',
+                color: 'var(--c-amber)',
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '2px',
+              }}
+            >
+              ALLOW MOTION ACCESS
+            </button>
+          )}
+        </div>
+      )}
+
       <TrackMap track={track} crumbs={crumbs} estimate={estimate} fix={fix} size={300} />
 
       {/* Steering & Confidence Card */}

@@ -1,24 +1,52 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fill, kindOf, STALE_AFTER_MS } from '../lib/signal';
-import { Contact } from '../lib/useScanner';
-import { Radio, Search, SlidersHorizontal, AlertTriangle, Cpu } from 'lucide-react';
+import { Capability, Contact, ScanMode } from '../lib/useScanner';
+import { Radio, Search, SlidersHorizontal, AlertTriangle, Cpu, Info, Bluetooth } from 'lucide-react';
 
 interface SurveyScreenProps {
   contacts: Record<string, Contact>;
   scanning: boolean;
   isSimulator: boolean;
+  capability: Capability;
+  mode: ScanMode;
   error: string | null;
+  notice: string | null;
   onStart: () => void;
   onStop: () => void;
   onToggleSimulator: () => void;
   onPick: (contact: Contact) => void;
 }
 
+/** What the button actually does, per mode. No mode promises more than it delivers. */
+const START_LABEL: Record<ScanMode, string> = {
+  scan: 'START LISTENING',
+  single: 'CHOOSE A DEVICE',
+  simulator: 'START SIMULATION',
+};
+
+const IDLE_COPY: Record<ScanMode, string> = {
+  scan:
+    'Tap START LISTENING to hear every Bluetooth device advertising nearby, sorted by signal strength.',
+  single:
+    'This browser can track one device at a time. Tap CHOOSE A DEVICE, pick your target from the browser’s list, and its signal will be tracked from there.',
+  simulator:
+    'Simulator mode. Tap START SIMULATION to walk through the app against five invented devices — no radio is involved and no reading is real.',
+};
+
+const LISTENING_COPY: Record<ScanMode, string> = {
+  scan: 'Listening for advertising packets… Make sure Bluetooth and Location are switched on.',
+  single: 'Waiting for advertising packets from the device you picked…',
+  simulator: 'Generating invented readings for five fictional devices…',
+};
+
 export const SurveyScreen: React.FC<SurveyScreenProps> = ({
   contacts,
   scanning,
   isSimulator,
+  capability,
+  mode,
   error,
+  notice,
   onStart,
   onStop,
   onToggleSimulator,
@@ -54,7 +82,66 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
         </span>
       </div>
 
-      {/* Error / Warning Banners */}
+      {/*
+        Simulator banner. Persistent and unmissable whenever readings are
+        fabricated — the old build only said so in the empty state, which
+        vanished the moment invented devices filled the list.
+      */}
+      {mode === 'simulator' && (
+        <div
+          style={{
+            padding: '14px 16px',
+            backgroundColor: 'rgba(99, 230, 226, 0.08)',
+            border: '1px dashed var(--c-warm)',
+            marginBottom: '16px',
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '12px',
+          }}
+        >
+          <Cpu size={18} color="var(--c-warm)" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '2px', color: 'var(--c-warm)' }}>
+              SIMULATED — NOT REAL DEVICES
+            </div>
+            <div style={{ fontSize: '13px', color: 'var(--c-dim)', marginTop: '4px', lineHeight: 1.5 }}>
+              {capability.bluetooth
+                ? 'Every reading below is invented. Switch the simulator off to use the radio.'
+                : 'This browser has no Web Bluetooth, so nothing here can be measured. Chrome on Android can.'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Single-device explainer: this browser genuinely cannot enumerate devices. */}
+      {mode === 'single' && (
+        <div
+          style={{
+            padding: '14px 16px',
+            backgroundColor: 'var(--c-ink-raised)',
+            borderLeft: '3px solid var(--c-amber)',
+            marginBottom: '16px',
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '12px',
+          }}
+        >
+          <Bluetooth size={18} color="var(--c-amber)" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div style={{ fontSize: '13px', color: 'var(--c-dim)', lineHeight: 1.5 }}>
+            <strong style={{ color: 'var(--c-text)' }}>One device at a time.</strong> This browser will
+            not list everything in range — only the device you pick from its own chooser. For a full
+            sweep you need Chrome with{' '}
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--c-amber)' }}>
+              #enable-experimental-web-platform-features
+            </span>{' '}
+            switched on.
+          </div>
+        </div>
+      )}
+
+      {/* Error banner */}
       {error && (
         <div
           style={{
@@ -68,8 +155,27 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             gap: '12px',
           }}
         >
-          <AlertTriangle size={18} color="var(--c-alarm)" />
+          <AlertTriangle size={18} color="var(--c-alarm)" style={{ flexShrink: 0 }} />
           <span style={{ fontSize: '14px', color: 'var(--c-text)' }}>{error}</span>
+        </div>
+      )}
+
+      {/* Notice banner — expected outcomes, not failures */}
+      {notice && (
+        <div
+          style={{
+            padding: '14px 16px',
+            backgroundColor: 'var(--c-ink-raised)',
+            borderLeft: '3px solid var(--c-muted)',
+            marginBottom: '16px',
+            borderRadius: '4px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+          }}
+        >
+          <Info size={18} color="var(--c-muted)" style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: '14px', color: 'var(--c-dim)' }}>{notice}</span>
         </div>
       )}
 
@@ -96,7 +202,7 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
           }}
         >
           <Radio size={16} />
-          {scanning ? 'STOP LISTENING' : 'START LISTENING'}
+          {scanning ? 'STOP LISTENING' : START_LABEL[mode]}
         </button>
 
         <button
@@ -107,7 +213,7 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             borderRadius: '4px',
             border: '1px solid var(--c-hairline)',
             backgroundColor: 'var(--c-ink-raised)',
-            color: namedOnly ? 'var(--c-muted)' : 'var(--c-amber)',
+            color: namedOnly ? 'var(--c-dim)' : 'var(--c-amber)',
             fontSize: '10px',
             fontWeight: 700,
             letterSpacing: '1.5px',
@@ -123,13 +229,18 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
 
         <button
           onClick={onToggleSimulator}
-          title="Toggle BLE Simulator Mode"
+          disabled={!capability.bluetooth}
+          title={
+            capability.bluetooth
+              ? 'Toggle BLE Simulator Mode'
+              : 'This browser has no Web Bluetooth, so only the simulator is available'
+          }
           style={{
             padding: '12px 14px',
             borderRadius: '4px',
             border: `1px solid ${isSimulator ? 'var(--c-warm)' : 'var(--c-hairline)'}`,
             backgroundColor: isSimulator ? 'rgba(99, 230, 226, 0.1)' : 'var(--c-ink-raised)',
-            color: isSimulator ? 'var(--c-warm)' : 'var(--c-muted)',
+            color: isSimulator ? 'var(--c-warm)' : 'var(--c-dim)',
             fontSize: '10px',
             fontWeight: 700,
             letterSpacing: '1.5px',
@@ -137,6 +248,8 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             gap: '6px',
+            opacity: capability.bluetooth ? 1 : 0.5,
+            cursor: capability.bluetooth ? 'pointer' : 'not-allowed',
           }}
         >
           <Cpu size={14} />
@@ -148,7 +261,7 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
       <div style={{ position: 'relative', marginBottom: '16px' }}>
         <Search
           size={16}
-          color="var(--c-hairline)"
+          color="var(--c-dim)"
           style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }}
         />
         <input
@@ -156,6 +269,7 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter by device name or address..."
+          aria-label="Filter devices by name or address"
           style={{
             width: '100%',
             backgroundColor: 'var(--c-ink-raised)',
@@ -181,12 +295,8 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
               marginTop: '12px',
             }}
           >
-            <p style={{ color: 'var(--c-muted)', fontSize: '14px', lineHeight: '1.6' }}>
-              {scanning
-                ? isSimulator
-                  ? 'Simulating nearby Bluetooth beacons... (AirPods, SmartWatch, Tile Tracker)'
-                  : 'Listening for Bluetooth advertising packets... Ensure Bluetooth and Location are active.'
-                : 'Tap START LISTENING to scan every Bluetooth device within 10 metres, sorted by signal strength.'}
+            <p style={{ color: 'var(--c-dim)', fontSize: '14px', lineHeight: '1.6' }}>
+              {scanning ? LISTENING_COPY[mode] : IDLE_COPY[mode]}
             </p>
           </div>
         ) : (
@@ -220,13 +330,14 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
                     backgroundColor: 'var(--c-hairline)',
                     borderRadius: '2px',
                     overflow: 'hidden',
+                    flexShrink: 0,
                   }}
                 >
                   <div
                     style={{
                       height: '100%',
                       width: `${fillWidth}%`,
-                      backgroundColor: 'var(--c-amber)',
+                      backgroundColor: item.simulated ? 'var(--c-warm)' : 'var(--c-amber)',
                       opacity: stale ? 0.25 : 1,
                       transition: 'width 200ms ease-out',
                     }}
@@ -235,10 +346,39 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
 
                 {/* Device Details */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--c-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {item.name ?? 'Unnamed Device'}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span
+                      style={{
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        color: 'var(--c-text)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {item.name ?? 'Unnamed Device'}
+                    </span>
+                    {/* Per-row tag, so a fabricated reading can never be mistaken
+                        for a measured one even at a glance. */}
+                    {item.simulated && (
+                      <span
+                        style={{
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          letterSpacing: '1.5px',
+                          color: 'var(--c-warm)',
+                          border: '1px solid var(--c-warm)',
+                          borderRadius: '3px',
+                          padding: '1px 5px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        SIM
+                      </span>
+                    )}
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--c-muted)', marginTop: '2px', letterSpacing: '0.4px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--c-dim)', marginTop: '2px', letterSpacing: '0.4px' }}>
                     {kindOf(item.name)} · {item.packets} packets{stale ? ' · quiet' : ''}
                   </div>
                 </div>
@@ -249,10 +389,11 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
                     fontFamily: 'var(--font-mono)',
                     fontSize: '18px',
                     fontWeight: 700,
-                    color: stale ? 'var(--c-amber-dim)' : 'var(--c-amber)',
+                    color: stale ? 'var(--c-amber-dim)' : item.simulated ? 'var(--c-warm)' : 'var(--c-amber)',
+                    flexShrink: 0,
                   }}
                 >
-                  {item.rssi.toFixed(0)} <span style={{ fontSize: '11px', color: 'var(--c-muted)' }}>dBm</span>
+                  {item.rssi.toFixed(0)} <span style={{ fontSize: '11px', color: 'var(--c-dim)' }}>dBm</span>
                 </div>
               </button>
             );

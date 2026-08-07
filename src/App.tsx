@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { SurveyScreen } from './screens/SurveyScreen';
 import { HuntScreen } from './screens/HuntScreen';
 import { useScanner, Contact } from './lib/useScanner';
@@ -8,7 +8,10 @@ export default function App() {
     contacts,
     scanning,
     isSimulator,
+    capability,
+    mode,
     error,
+    notice,
     start,
     stop,
     toggleSimulator,
@@ -17,12 +20,9 @@ export default function App() {
 
   const [target, setTarget] = useState<{ id: string; name: string | null } | null>(null);
 
-  // Scanning must keep running while hunting
-  useEffect(() => {
-    if (target && !scanning) {
-      start();
-    }
-  }, [target, scanning, start]);
+  // No effect restarts the scan here on purpose: both Bluetooth entry points
+  // need a user gesture, and stopping now clears the store, so there is never
+  // a stale row left to pick while stopped.
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--c-ink)', display: 'flex', flexDirection: 'column' }}>
@@ -39,7 +39,10 @@ export default function App() {
           contacts={contacts}
           scanning={scanning}
           isSimulator={isSimulator}
+          capability={capability}
+          mode={mode}
           error={error}
+          notice={notice}
           onStart={start}
           onStop={stop}
           onToggleSimulator={toggleSimulator}

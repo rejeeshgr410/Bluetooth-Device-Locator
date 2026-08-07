@@ -58,7 +58,7 @@ export const Tape: React.FC<TapeProps> = ({ history, height = 150 }) => {
                 top: '-12px',
                 fontFamily: 'var(--font-mono)',
                 fontSize: '9px',
-                color: 'var(--c-hairline)',
+                color: 'var(--c-dim)',
               }}
             >
               {line}

@@ -1,13 +1,22 @@
 :root {
   --c-ink: #070B10;
   --c-ink-raised: #0E141C;
+
+  /* Borders and rules ONLY. Never use this as a text colour: against
+     --c-ink-raised it measures 1.18:1, which is not rendered so much as
+     implied. Small print belongs on --c-dim. */
   --c-hairline: #1B242F;
+
   --c-amber: #FFB000;
-  --c-amber-dim: #6A4A08;
+  /* Dimmed amber for the stale readout. 3.68:1 on --c-ink — still obviously
+     "signal lost", but legible, which is exactly when it has to be. */
+  --c-amber-dim: #8A6410;
   --c-warm: #63E6E2;
   --c-cold: #5B6B7C;
   --c-text: #E8EDF2;
   --c-muted: #7C8B9A;
+  /* Small labels and secondary copy. 6.35:1 on --c-ink-raised. */
+  --c-dim: #8A99A8;
   --c-alarm: #FF5A47;
 
   --font-mono: 'JetBrains Mono', Menlo, monospace;
@@ -51,8 +60,8 @@ html, body {
 .text-warm { color: var(--c-warm); }
 .text-cold { color: var(--c-cold); }
 .text-muted { color: var(--c-muted); }
+.text-dim { color: var(--c-dim); }
 .text-alarm { color: var(--c-alarm); }
-.text-hairline { color: var(--c-hairline); }
 
 /* Buttons & Inputs */
 button {
@@ -64,7 +73,32 @@ button {
 
 input {
   font-family: inherit;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Keyboard focus must be visible. The previous build set outline:none on
+   inputs and replaced it with nothing, leaving keyboard users with no way
+   to tell where they were. */
+:focus-visible {
+  outline: 2px solid var(--c-amber);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Pointer users keep the clean look; only keyboard focus draws the ring. */
+:focus:not(:focus-visible) {
   outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Custom Scrollbar for sleek dark look */

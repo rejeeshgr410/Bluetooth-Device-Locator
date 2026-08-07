@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Tape } from '../components/Tape';
 import { TrackMap } from '../components/TrackMap';
 import { band, roughRange, trend, STALE_AFTER_MS } from '../lib/signal';
@@ -29,7 +29,7 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
   const [sound, setSound] = useState(true);
   const [haptics, setHaptics] = useState(true);
   const [now, setNow] = useState(Date.now());
-  const best = useRef<number | null>(null);
+  const [best, setBest] = useState<number | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 250);
@@ -39,10 +39,13 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
   const contact = contacts[target.id];
   const stale = !contact || now - contact.lastSeen > STALE_AFTER_MS;
   const live = stale ? null : contact.rssi;
+  const simulated = contact?.simulated ?? false;
 
-  if (live !== null && (best.current === null || live > best.current)) {
-    best.current = live;
-  }
+  // Tracked in an effect, not mutated during render: writing to a ref while
+  // rendering is a rules-of-React violation that misbehaves under StrictMode.
+  useEffect(() => {
+    if (live !== null) setBest((b) => (b === null || live > b ? live : b));
+  }, [live]);
 
   const t = useMemo(() => (contact ? trend(contact.history) : 'steady'), [contact?.history]);
   useClicker({ rssi: live, active: !stale, sound, haptics });
@@ -103,9 +106,26 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
       </div>
 
       {/* Target Info */}
-      <h2 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--c-text)', margin: 0 }}>
-        {target.name ?? 'Unnamed device'}
-      </h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        <h2 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--c-text)', margin: 0 }}>
+          {target.name ?? 'Unnamed device'}
+        </h2>
+        {simulated && (
+          <span
+            style={{
+              fontSize: '10px',
+              fontWeight: 700,
+              letterSpacing: '1.5px',
+              color: 'var(--c-warm)',
+              border: '1px solid var(--c-warm)',
+              borderRadius: '3px',
+              padding: '2px 6px',
+            }}
+          >
+            SIMULATED
+          </span>
+        )}
+      </div>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--c-muted)', marginTop: '2px' }}>
         {target.id}
       </div>
@@ -204,19 +224,19 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
             {/* Stats Row */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginTop: '12px' }}>
               <div>
-                <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1.5px', color: 'var(--c-hairline)' }}>ROUGH RANGE</div>
+                <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1.5px', color: 'var(--c-dim)' }}>ROUGH RANGE</div>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', color: 'var(--c-text)', marginTop: '2px' }}>
                   {live === null ? '—' : roughRange(live)}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1.5px', color: 'var(--c-hairline)' }}>BEST SEEN</div>
+                <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1.5px', color: 'var(--c-dim)' }}>BEST SEEN</div>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', color: 'var(--c-text)', marginTop: '2px' }}>
-                  {best.current === null ? '—' : `${best.current.toFixed(0)} dBm`}
+                  {best === null ? '—' : `${best.toFixed(0)} dBm`}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1.5px', color: 'var(--c-hairline)' }}>PACKETS</div>
+                <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1.5px', color: 'var(--c-dim)' }}>PACKETS</div>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', color: 'var(--c-text)', marginTop: '2px' }}>
                   {contact?.packets ?? 0}
                 </div>
@@ -254,7 +274,7 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
       </div>
 
       {/* Caveat Text */}
-      <p style={{ fontSize: '12px', color: 'var(--c-hairline)', marginTop: '20px', lineHeight: '1.6' }}>
+      <p style={{ fontSize: '12px', color: 'var(--c-dim)', marginTop: '20px', lineHeight: '1.6' }}>
         Signal strength is a relative proxy. Metal, walls, and bodies absorb signal. Trust the trend trace rather than any single number.
       </p>
     </div>
@@ -299,19 +319,19 @@ const TrailPanel: React.FC<TrailPanelProps> = ({ trail, live, isSimulator, onSim
         {/* Trail Stats Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginTop: '12px' }}>
           <div>
-            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1px', color: 'var(--c-hairline)' }}>MARKS</div>
+            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1px', color: 'var(--c-dim)' }}>MARKS</div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', color: 'var(--c-text)', marginTop: '2px' }}>{crumbs.length}</div>
           </div>
           <div>
-            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1px', color: 'var(--c-hairline)' }}>BASELINE</div>
+            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1px', color: 'var(--c-dim)' }}>BASELINE</div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', color: 'var(--c-text)', marginTop: '2px' }}>{estimate.spread.toFixed(0)} m</div>
           </div>
           <div>
-            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1px', color: 'var(--c-hairline)' }}>STEPS</div>
+            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1px', color: 'var(--c-dim)' }}>STEPS</div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', color: 'var(--c-text)', marginTop: '2px' }}>{fix.steps}</div>
           </div>
           <div>
-            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1px', color: 'var(--c-hairline)' }}>CONFIDENCE</div>
+            <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '1px', color: 'var(--c-dim)' }}>CONFIDENCE</div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: estimate.confidence === 'good' ? 'var(--c-warm)' : 'var(--c-muted)', marginTop: '2px', fontWeight: 700 }}>
               {estimate.confidence.toUpperCase()}
             </div>

@@ -203,7 +203,7 @@ export const TrackMap: React.FC<TrackMapProps> = ({
           bottom: '6px',
           fontFamily: 'var(--font-mono)',
           fontSize: '10px',
-          color: 'var(--c-hairline)',
+          color: 'var(--c-dim)',
           letterSpacing: '1px',
         }}
       >

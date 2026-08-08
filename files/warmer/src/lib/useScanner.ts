@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PermissionsAndroid, Platform } from 'react-native';
+import { PermissionsAndroid, Platform, Permission } from 'react-native';
 import { BleManager, Device, State } from 'react-native-ble-plx';
 import { ema, STALE_AFTER_MS } from './signal';
 
@@ -13,19 +13,44 @@ export type Contact = {
   history: number[];   // smoothed tape, newest last
 };
 
+/**
+ * What is actually stopping us, if anything. The previous version collapsed
+ * all of this into a single `radioOn` boolean, so a missing runtime permission
+ * was reported as "Bluetooth is off" — sending you to toggle a radio that was
+ * already on, with no mention of the permission that was really missing.
+ */
+export type RadioStatus =
+  | 'checking'
+  | 'ready'
+  | 'needsPermission'
+  | 'off'
+  | 'unsupported';
+
 const TAPE_LENGTH = 90;
 
-/** Android needs runtime permission before any scan will return results. */
-export async function requestScanPermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
+/** Android 12+ replaced the location-based Bluetooth permissions. */
+function wantedPermissions(): Permission[] {
+  if (Platform.OS !== 'android') return [];
   const api = Platform.Version as number;
-  const wanted =
-    api >= 31
-      ? [
-          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-        ]
-      : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+  return api >= 31
+    ? [
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+      ]
+    : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+}
+
+/** Check without prompting, so launching the app does not throw up a dialog. */
+export async function hasScanPermission(): Promise<boolean> {
+  const wanted = wantedPermissions();
+  if (wanted.length === 0) return true;
+  const results = await Promise.all(wanted.map((p) => PermissionsAndroid.check(p)));
+  return results.every(Boolean);
+}
+
+export async function requestScanPermission(): Promise<boolean> {
+  const wanted = wantedPermissions();
+  if (wanted.length === 0) return true;
   const result = await PermissionsAndroid.requestMultiple(wanted);
   return wanted.every((p) => result[p] === PermissionsAndroid.RESULTS.GRANTED);
 }
@@ -34,18 +59,53 @@ export function useScanner() {
   const manager = useMemo(() => new BleManager(), []);
   const [contacts, setContacts] = useState<Record<string, Contact>>({});
   const [scanning, setScanning] = useState(false);
-  const [radio, setRadio] = useState<State>(State.Unknown);
+  const [bleState, setBleState] = useState<State>(State.Unknown);
+  const [permitted, setPermitted] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const store = useRef<Record<string, Contact>>({});
 
   useEffect(() => {
-    const sub = manager.onStateChange((s) => setRadio(s), true);
+    let alive = true;
+    hasScanPermission().then((ok) => alive && setPermitted(ok));
+    const sub = manager.onStateChange((s) => alive && setBleState(s), true);
     return () => {
+      alive = false;
       sub.remove();
       manager.stopDeviceScan();
       manager.destroy();
     };
   }, [manager]);
+
+  /**
+   * Permission first, then re-read the adapter. Without the explicit re-read
+   * the state stays whatever it was when we had no right to look — granting
+   * permission does not itself change the adapter, so onStateChange may never
+   * fire again and the UI would stay stuck on the wrong answer.
+   */
+  const requestPermission = useCallback(async () => {
+    setError(null);
+    const ok = await requestScanPermission();
+    setPermitted(ok);
+    if (ok) {
+      try {
+        setBleState(await manager.state());
+      } catch {
+        // leave the subscription to correct it
+      }
+    }
+    return ok;
+  }, [manager]);
+
+  const status: RadioStatus =
+    permitted === null || bleState === State.Unknown
+      ? 'checking'
+      : bleState === State.Unsupported
+        ? 'unsupported'
+        : !permitted || bleState === State.Unauthorized
+          ? 'needsPermission'
+          : bleState === State.PoweredOn
+            ? 'ready'
+            : 'off';
 
   // Flush the mutable store into React state on a fixed tick, so a busy
   // room does not cause a render per advertising packet.
@@ -56,8 +116,7 @@ export function useScanner() {
 
   const start = useCallback(async () => {
     setError(null);
-    const ok = await requestScanPermission();
-    if (!ok) {
+    if (!(await requestPermission())) {
       setError('Bluetooth permission was denied. Grant it in Settings to scan.');
       return;
     }
@@ -83,7 +142,7 @@ export function useScanner() {
         history,
       };
     });
-  }, [manager]);
+  }, [manager, requestPermission]);
 
   const stop = useCallback(() => {
     manager.stopDeviceScan();
@@ -95,7 +154,7 @@ export function useScanner() {
     setScanning(false);
   }, [manager]);
 
-  return { contacts, scanning, radio, error, start, stop };
+  return { contacts, scanning, status, error, start, stop, requestPermission };
 }
 
 export function isStale(contact: Contact | undefined, now = Date.now()): boolean {

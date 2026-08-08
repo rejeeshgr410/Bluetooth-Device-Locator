@@ -2,23 +2,25 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, TextInput } from 'react-native';
 import { c, type, mono } from '../lib/theme';
 import { fill, kindOf, STALE_AFTER_MS } from '../lib/signal';
-import { Contact } from '../lib/useScanner';
+import { Contact, RadioStatus } from '../lib/useScanner';
 
 export function SurveyScreen({
   contacts,
   scanning,
   error,
-  radioOn,
+  status,
   onStart,
   onStop,
+  onRequestPermission,
   onPick,
 }: {
   contacts: Record<string, Contact>;
   scanning: boolean;
   error: string | null;
-  radioOn: boolean;
+  status: RadioStatus;
   onStart: () => void;
   onStop: () => void;
+  onRequestPermission: () => void;
   onPick: (contact: Contact) => void;
 }) {
   const [filter, setFilter] = useState('');
@@ -46,15 +48,34 @@ export function SurveyScreen({
         <Text style={type.eyebrow}>SIGNAL HUNT</Text>
       </View>
 
-      {!radioOn && (
-        <Notice text="Bluetooth is off. Turn it on to hear anything at all." tone="alarm" />
+      {status === 'needsPermission' && (
+        <View style={[styles.notice, { borderLeftColor: c.amber }]}>
+          <Text style={[type.body, { color: c.text }]}>
+            Warmer needs Bluetooth permission before it can see anything — including whether your
+            Bluetooth is even switched on. Nothing is sent anywhere.
+          </Text>
+          <Pressable onPress={onRequestPermission} style={styles.noticeButton}>
+            <Text style={styles.noticeButtonText}>GRANT BLUETOOTH PERMISSION</Text>
+          </Pressable>
+        </View>
+      )}
+      {status === 'off' && (
+        <Notice text="Bluetooth is switched off. Turn it on to hear anything at all." tone="alarm" />
+      )}
+      {status === 'unsupported' && (
+        <Notice text="This device has no Bluetooth LE radio, so there is nothing to scan with." tone="alarm" />
       )}
       {error && <Notice text={error} tone="alarm" />}
 
       <View style={styles.controls}>
         <Pressable
           onPress={scanning ? onStop : onStart}
-          style={[styles.button, scanning && styles.buttonActive]}
+          disabled={status === 'off' || status === 'unsupported'}
+          style={[
+            styles.button,
+            scanning && styles.buttonActive,
+            (status === 'off' || status === 'unsupported') && styles.buttonDisabled,
+          ]}
         >
           <Text style={[styles.buttonText, scanning && { color: c.ink }]}>
             {scanning ? 'STOP LISTENING' : 'START LISTENING'}
@@ -137,7 +158,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonActive: { backgroundColor: c.amber },
+  buttonDisabled: { opacity: 0.4, borderColor: c.hairline },
   buttonText: { color: c.amber, fontWeight: '700', letterSpacing: 2, fontSize: 13 },
+  noticeButton: {
+    marginTop: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: c.amber,
+    alignSelf: 'flex-start',
+  },
+  noticeButtonText: { color: c.amber, fontSize: 11, fontWeight: '700', letterSpacing: 2 },
   chip: {
     paddingHorizontal: 14,
     justifyContent: 'center',

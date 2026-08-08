@@ -63,12 +63,20 @@ export function companyIdOf(manufacturerData: string | null | undefined): number
   return bytes[0] | (bytes[1] << 8);
 }
 
+/**
+ * Only name companies we actually recognise.
+ *
+ * An earlier version printed `Vendor 0x<id>` for anything unmatched, which on
+ * a real phone produced labels like "Vendor 0xE97C" — an id far outside the
+ * range the SIG has ever assigned. Whether that is ble-plx handing us the
+ * payload without the company prefix or a device with malformed data, the
+ * number was not trustworthy, and a confident-looking hex code is worse than
+ * admitting we do not know.
+ */
 export function vendorOf(manufacturerData: string | null | undefined): string | null {
   const id = companyIdOf(manufacturerData);
   if (id === null) return null;
-  const known = COMPANIES[id];
-  if (known) return known;
-  return `Vendor 0x${id.toString(16).padStart(4, '0').toUpperCase()}`;
+  return COMPANIES[id] ?? null;
 }
 
 /** A couple of service UUIDs common enough to be worth naming. */

@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
   seg: {
     paddingHorizontal: 18,
     paddingVertical: 8,
-    borderRadius: 3,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: c.hairline,
   },
@@ -335,7 +335,7 @@ const styles = StyleSheet.create({
     marginTop: 22,
     padding: 18,
     backgroundColor: c.inkRaised,
-    borderRadius: 4,
+    borderRadius: 16,
     borderLeftWidth: 2,
     borderLeftColor: c.amber,
     gap: 8,
@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
   trailButton: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 3,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: c.amber,
     alignItems: 'center',

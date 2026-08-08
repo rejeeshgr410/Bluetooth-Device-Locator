@@ -132,12 +132,17 @@ export function TrackMap({ track, crumbs, estimate, fix, size }: Props) {
 const styles = StyleSheet.create({
   frame: {
     backgroundColor: c.inkRaised,
-    borderRadius: 4,
+    // A white map on an off-white page has no edge of its own. On the old dark
+    // scheme the raised surface was enough; here it needs a real border.
+    borderWidth: 1,
+    borderColor: c.hairline,
+    borderRadius: 18,
     overflow: 'hidden',
     alignSelf: 'center',
   },
   grid: { position: 'absolute', backgroundColor: c.hairline, opacity: 0.6 },
-  trackDot: { position: 'absolute', width: 2, height: 2, borderRadius: 1, backgroundColor: c.text },
+  // Muted, not full-strength text colour: black dots read as heavy on white.
+  trackDot: { position: 'absolute', width: 2, height: 2, borderRadius: 1, backgroundColor: c.muted },
   estimate: {
     position: 'absolute',
     width: 40,

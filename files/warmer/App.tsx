@@ -40,7 +40,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: c.ink,
     // SafeAreaView only applies insets on iOS. Android 15+ forces edge-to-edge,
-    // so without this the header draws underneath the clock and battery â€” which
+    // so without this the header draws underneath the clock and battery, which
     // is exactly what it was doing on a Pixel running Android 17.
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
   },

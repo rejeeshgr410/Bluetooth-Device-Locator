@@ -165,7 +165,7 @@ const styles = StyleSheet.create({
   button: {
     flex: 1,
     paddingVertical: 15,
-    borderRadius: 3,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: c.amber,
     alignItems: 'center',
@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingVertical: 11,
     paddingHorizontal: 16,
-    borderRadius: 3,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: c.amber,
     alignSelf: 'flex-start',
@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 14,
     justifyContent: 'center',
-    borderRadius: 3,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: c.hairline,
   },
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: c.inkRaised,
     color: c.text,
-    borderRadius: 3,
+    borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 14,
@@ -214,6 +214,6 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: c.amber,
     marginBottom: 14,
-    borderRadius: 3,
+    borderRadius: 12,
   },
 });

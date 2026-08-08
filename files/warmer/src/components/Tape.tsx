@@ -32,7 +32,10 @@ export function Tape({ history, height = 150 }: { history: number[]; height?: nu
                     height: Math.max(2, fill(v) * height),
                     width: '100%',
                     backgroundColor: c.amber,
-                    opacity: 0.18 + age * 0.82,
+                    // Floor raised from 0.18: on the old dark background a
+                    // faint bar receded into black, which read as "old". On
+                    // white it just vanishes, so the tape lost its left half.
+                    opacity: 0.3 + age * 0.7,
                   }}
                 />
               )}
@@ -45,7 +48,16 @@ export function Tape({ history, height = 150 }: { history: number[]; height?: nu
 }
 
 const styles = StyleSheet.create({
-  wrap: { width: '100%', justifyContent: 'flex-end' },
+  wrap: {
+    width: '100%',
+    justifyContent: 'flex-end',
+    backgroundColor: c.inkRaised,
+    borderWidth: 1,
+    borderColor: c.hairline,
+    borderRadius: 16,
+    overflow: 'hidden',
+    paddingHorizontal: 4,
+  },
   bars: { flexDirection: 'row', alignItems: 'flex-end', height: '100%' },
   slot: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 0.6, height: '100%' },
   grid: {
@@ -58,7 +70,8 @@ const styles = StyleSheet.create({
   },
   gridLabel: {
     position: 'absolute',
-    right: 0,
+    // Clear of the rounded border, which was clipping the leading minus sign.
+    right: 8,
     top: -13,
     fontFamily: mono,
     fontSize: 9,

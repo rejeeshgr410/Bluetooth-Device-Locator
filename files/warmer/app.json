@@ -7,7 +7,7 @@
     "userInterfaceStyle": "dark",
     "scheme": "warmer",
     "ios": {
-      "bundleIdentifier": "com.example.warmer",
+      "bundleIdentifier": "com.rejeesh.warmer",
       "supportsTablet": false,
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Warmer reads the signal strength of nearby Bluetooth devices so you can walk toward the one you lost.",
@@ -17,7 +17,7 @@
       }
     },
     "android": {
-      "package": "com.example.warmer",
+      "package": "com.rejeesh.warmer",
       "permissions": [
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
@@ -47,12 +47,16 @@
         "expo-build-properties",
         {
           "android": {
-            "minSdkVersion": 24
+            "minSdkVersion": 24,
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35
           }
         }
       ],
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "./plugins/withReleaseSigning",
+      "expo-audio"
     ]
   }
 }

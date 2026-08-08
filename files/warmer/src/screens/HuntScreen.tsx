@@ -4,7 +4,7 @@ import { useKeepAwake } from 'expo-keep-awake';
 import { Tape } from '../components/Tape';
 import { TrackMap } from '../components/TrackMap';
 import { c, type, mono } from '../lib/theme';
-import { band, roughRange, trend, STALE_AFTER_MS } from '../lib/signal';
+import { band, roughRange, trend, staleWindow } from '../lib/signal';
 import { distanceTo, relativeBearing, steer } from '../lib/breadcrumbs';
 import { Contact } from '../lib/useScanner';
 import { useClicker } from '../lib/useClicker';
@@ -35,7 +35,8 @@ export function HuntScreen({
   }, []);
 
   const contact = contacts[target.id];
-  const stale = !contact || now - contact.lastSeen > STALE_AFTER_MS;
+  const isClassic = contact?.classic ?? false;
+  const stale = !contact || now - contact.lastSeen > staleWindow(isClassic);
   const live = stale ? null : contact!.rssi;
 
   // In an effect, not mutated during render: writing a ref while rendering is
@@ -73,9 +74,25 @@ export function HuntScreen({
         <Text style={type.unit}>dBm</Text>
       </View>
 
+      {isClassic && (
+        <View style={[styles.card, { borderLeftColor: c.warm, marginTop: 14 }]}>
+          <Text style={[type.band, { color: c.warm, fontSize: 12 }]}>CLASSIC BLUETOOTH</Text>
+          <Text style={type.body}>
+            This device was found by Classic inquiry, not an LE scan. It reports roughly once every
+            twelve seconds, so the number steps rather than flows — and the trail cannot work from
+            that few samples. Walk slowly and read the trend across several updates.
+          </Text>
+        </View>
+      )}
+
       <View style={styles.segment}>
         <Seg label="METER" active={mode === 'meter'} onPress={() => setMode('meter')} />
-        <Seg label="TRAIL" active={mode === 'trail'} onPress={() => setMode('trail')} />
+        <Seg
+          label="TRAIL"
+          active={mode === 'trail'}
+          onPress={() => setMode('trail')}
+          disabled={isClassic}
+        />
       </View>
 
       {mode === 'meter' ? (
@@ -187,9 +204,23 @@ function TrailPanel({
   );
 }
 
-function Seg({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function Seg({
+  label,
+  active,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <Pressable onPress={onPress} style={[styles.seg, active && styles.segActive]}>
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.seg, active && styles.segActive, disabled && { opacity: 0.35 }]}
+    >
       <Text style={[styles.segText, active && { color: c.ink }]}>{label}</Text>
     </Pressable>
   );

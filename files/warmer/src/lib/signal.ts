@@ -5,6 +5,17 @@
 
 export const STALE_AFTER_MS = 5000;
 
+/**
+ * Classic Bluetooth inquiry is not a stream: it runs ~12-second bursts and
+ * reports each device roughly once per burst. Judging it by the LE window
+ * would mark every Classic device stale almost all of the time.
+ */
+export const CLASSIC_STALE_AFTER_MS = 26000;
+
+export function staleWindow(classic: boolean): number {
+  return classic ? CLASSIC_STALE_AFTER_MS : STALE_AFTER_MS;
+}
+
 /** Exponential moving average. Alpha is per-packet, not per-second. */
 export function ema(previous: number | null, sample: number, alpha = 0.28): number {
   if (previous === null || Number.isNaN(previous)) return sample;

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable, TextInput } from 'react-native';
 import { c, type, mono } from '../lib/theme';
-import { fill, kindOf, STALE_AFTER_MS } from '../lib/signal';
+import { fill, kindOf, staleWindow, CLASSIC_STALE_AFTER_MS } from '../lib/signal';
 import { Contact, RadioStatus } from '../lib/useScanner';
 
 export function SurveyScreen({
@@ -35,7 +35,9 @@ export function SurveyScreen({
   const rows = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return Object.values(contacts)
-      .filter((d) => now - d.lastSeen < 20000)
+      // Classic devices report about once per inquiry burst, so they need a
+      // longer grace period than an LE advertiser before we drop the row.
+      .filter((d) => now - d.lastSeen < (d.classic ? CLASSIC_STALE_AFTER_MS + 20000 : 20000))
       .filter((d) => (namedOnly ? !!d.name : true))
       .filter((d) =>
         q
@@ -117,7 +119,7 @@ export function SurveyScreen({
           </Text>
         }
         renderItem={({ item }) => {
-          const stale = now - item.lastSeen > STALE_AFTER_MS;
+          const stale = now - item.lastSeen > staleWindow(item.classic);
           return (
             <Pressable onPress={() => onPick({ ...item, name: item.label })} style={styles.row}>
               <View style={styles.rowMeter}>
@@ -131,7 +133,9 @@ export function SurveyScreen({
                   {item.label}
                 </Text>
                 <Text style={styles.rowMeta}>
-                  {kindOf(item.name ?? item.label)} · {item.packets} packets{stale ? ' · quiet' : ''}
+                  {item.classic ? 'Classic' : kindOf(item.name ?? item.label)} · {item.packets}{' '}
+                  {item.classic ? 'sightings' : 'packets'}
+                  {stale ? ' · quiet' : ''}
                 </Text>
               </View>
               <Text style={[styles.rowRssi, { color: stale ? c.amberDim : c.amber }]}>

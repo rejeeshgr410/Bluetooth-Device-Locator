@@ -7,8 +7,10 @@ import {
   ScanMode,
   ScanCallbackType,
 } from 'react-native-ble-plx';
-import { ema, STALE_AFTER_MS } from './signal';
+import { ema, staleWindow } from './signal';
 import { describe } from './vendors';
+import { ClassicBluetooth, type ClassicDevice } from '../../modules/classic-bluetooth';
+import type { EventSubscription } from 'expo-modules-core';
 
 export type Contact = {
   id: string;
@@ -16,6 +18,8 @@ export type Contact = {
   name: string | null;
   /** Best available display label: real name, else vendor/service, else Unnamed. */
   label: string;
+  /** Found via Classic (BR/EDR) inquiry rather than an LE scan. */
+  classic: boolean;
   rssi: number;        // smoothed
   raw: number;         // last packet
   packets: number;
@@ -72,7 +76,10 @@ export function useScanner() {
   const [bleState, setBleState] = useState<State>(State.Unknown);
   const [permitted, setPermitted] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [classicError, setClassicError] = useState<string | null>(null);
   const store = useRef<Record<string, Contact>>({});
+  const classicSubs = useRef<EventSubscription[]>([]);
+  const classicWanted = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -81,6 +88,10 @@ export function useScanner() {
     return () => {
       alive = false;
       sub.remove();
+      classicWanted.current = false;
+      classicSubs.current.forEach((s) => s.remove());
+      classicSubs.current = [];
+      ClassicBluetooth?.stopDiscovery().catch(() => {});
       manager.stopDeviceScan();
       manager.destroy();
     };
@@ -148,12 +159,73 @@ export function useScanner() {
       id: device.id,
       name,
       label,
+      classic: false,
       rssi: smoothed,
       raw: device.rssi,
       packets: (prev?.packets ?? 0) + 1,
       lastSeen: Date.now(),
       history,
     };
+  }, []);
+
+  /**
+   * Classic inquiry gives one sample per device per ~12s burst, so there is no
+   * meaningful packet cadence to smooth. Take the reading as-is rather than
+   * running it through the EMA, which would lag badly at one sample per burst.
+   */
+  const ingestClassic = useCallback((d: ClassicDevice) => {
+    const prev = store.current[d.id];
+    const name = d.name ?? prev?.name ?? null;
+    const history = [...(prev?.history ?? []), d.rssi].slice(-TAPE_LENGTH);
+    store.current[d.id] = {
+      id: d.id,
+      name,
+      label: name ?? prev?.label ?? 'Unnamed (Classic)',
+      classic: true,
+      rssi: d.rssi,
+      raw: d.rssi,
+      packets: (prev?.packets ?? 0) + 1,
+      lastSeen: Date.now(),
+      history,
+    };
+  }, []);
+
+  /**
+   * Classic discovery runs in bursts and then stops itself, so keeping it going
+   * means restarting on every onDiscoveryFinished. `classicWanted` guards that
+   * loop: without it, a stop() that lands mid-burst would be undone by the
+   * finish event that arrives a moment later.
+   */
+  const startClassic = useCallback(() => {
+    const mod = ClassicBluetooth;
+    if (!mod || !mod.isSupported()) return;
+
+    classicWanted.current = true;
+
+    if (classicSubs.current.length === 0) {
+      classicSubs.current.push(
+        mod.addListener('onDeviceFound', ingestClassic),
+        mod.addListener('onDiscoveryFinished', () => {
+          if (classicWanted.current) {
+            mod.startDiscovery().catch(() => {});
+          }
+        }),
+      );
+    }
+
+    mod.startDiscovery().catch((e: unknown) => {
+      // Classic is a bonus channel: if it will not start, the LE scan carries
+      // on rather than the whole hunt failing.
+      setClassicError(e instanceof Error ? e.message : 'Classic Bluetooth discovery unavailable');
+      classicWanted.current = false;
+    });
+  }, [ingestClassic]);
+
+  const stopClassic = useCallback(() => {
+    classicWanted.current = false;
+    classicSubs.current.forEach((s) => s.remove());
+    classicSubs.current = [];
+    ClassicBluetooth?.stopDiscovery().catch(() => {});
   }, []);
 
   /**
@@ -203,10 +275,12 @@ export function useScanner() {
     store.current = {};
     setScanning(true);
     beginScan(false);
-  }, [manager, requestPermission, beginScan]);
+    startClassic();
+  }, [manager, requestPermission, beginScan, startClassic]);
 
   const stop = useCallback(() => {
     manager.stopDeviceScan();
+    stopClassic();
     // Clear the store too. Rows are filtered on lastSeen, so without this a
     // stopped scan still showed devices for another twenty seconds — readings
     // that are no longer being taken.
@@ -215,9 +289,19 @@ export function useScanner() {
     setScanning(false);
   }, [manager]);
 
-  return { contacts, scanning, status, error, start, stop, requestPermission };
+  return {
+    contacts,
+    scanning,
+    status,
+    error,
+    classicError,
+    classicSupported: !!ClassicBluetooth,
+    start,
+    stop,
+    requestPermission,
+  };
 }
 
 export function isStale(contact: Contact | undefined, now = Date.now()): boolean {
-  return !contact || now - contact.lastSeen > STALE_AFTER_MS;
+  return !contact || now - contact.lastSeen > staleWindow(contact.classic);
 }

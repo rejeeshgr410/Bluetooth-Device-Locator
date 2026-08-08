@@ -37,7 +37,13 @@ export function SurveyScreen({
     return Object.values(contacts)
       .filter((d) => now - d.lastSeen < 20000)
       .filter((d) => (namedOnly ? !!d.name : true))
-      .filter((d) => (q ? (d.name ?? '').toLowerCase().includes(q) || d.id.toLowerCase().includes(q) : true))
+      .filter((d) =>
+        q
+          ? d.label.toLowerCase().includes(q) ||
+            (d.name ?? '').toLowerCase().includes(q) ||
+            d.id.toLowerCase().includes(q)
+          : true,
+      )
       .sort((a, b) => b.rssi - a.rssi);
   }, [contacts, filter, now, namedOnly]);
 
@@ -113,16 +119,19 @@ export function SurveyScreen({
         renderItem={({ item }) => {
           const stale = now - item.lastSeen > STALE_AFTER_MS;
           return (
-            <Pressable onPress={() => onPick(item)} style={styles.row}>
+            <Pressable onPress={() => onPick({ ...item, name: item.label })} style={styles.row}>
               <View style={styles.rowMeter}>
                 <View style={[styles.rowMeterFill, { width: `${fill(item.rssi) * 100}%`, opacity: stale ? 0.25 : 1 }]} />
               </View>
               <View style={styles.rowBody}>
-                <Text style={type.item} numberOfLines={1}>
-                  {item.name ?? 'Unnamed'}
+                <Text
+                  style={[type.item, !item.name && { color: c.dim, fontStyle: 'italic' }]}
+                  numberOfLines={1}
+                >
+                  {item.label}
                 </Text>
                 <Text style={styles.rowMeta}>
-                  {kindOf(item.name)} · {item.packets} packets{stale ? ' · quiet' : ''}
+                  {kindOf(item.name ?? item.label)} · {item.packets} packets{stale ? ' · quiet' : ''}
                 </Text>
               </View>
               <Text style={[styles.rowRssi, { color: stale ? c.amberDim : c.amber }]}>

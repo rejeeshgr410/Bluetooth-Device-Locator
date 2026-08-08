@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform, Permission } from 'react-native';
-import { BleManager, Device, State } from 'react-native-ble-plx';
+import {
+  BleManager,
+  Device,
+  State,
+  ScanMode,
+  ScanCallbackType,
+} from 'react-native-ble-plx';
 import { ema, STALE_AFTER_MS } from './signal';
+import { describe } from './vendors';
 
 export type Contact = {
   id: string;
+  /** The advertised Local Name, if the device ever sends one. Often null. */
   name: string | null;
+  /** Best available display label: real name, else vendor/service, else Unnamed. */
+  label: string;
   rssi: number;        // smoothed
   raw: number;         // last packet
   packets: number;
@@ -114,6 +124,76 @@ export function useScanner() {
     return () => clearInterval(id);
   }, []);
 
+  const ingest = useCallback((device: Device) => {
+    if (device.rssi == null) return;
+    const prev = store.current[device.id];
+    const smoothed = ema(prev?.rssi ?? null, device.rssi);
+    const history = [...(prev?.history ?? []), smoothed].slice(-TAPE_LENGTH);
+
+    // Names are sticky. A device that advertised its name once but omits it
+    // from later packets should not flicker back to "Unnamed" — the 31-byte
+    // advertising budget means many devices only include the name sometimes.
+    const name = device.name ?? device.localName ?? prev?.name ?? null;
+    const label =
+      describe({
+        name,
+        localName: device.localName,
+        manufacturerData: device.manufacturerData,
+        serviceUUIDs: device.serviceUUIDs,
+      }) ??
+      prev?.label ??
+      'Unnamed';
+
+    store.current[device.id] = {
+      id: device.id,
+      name,
+      label,
+      rssi: smoothed,
+      raw: device.rssi,
+      packets: (prev?.packets ?? 0) + 1,
+      lastSeen: Date.now(),
+      history,
+    };
+  }, []);
+
+  /**
+   * `legacy` false asks Android for extended advertisements too — Bluetooth 5
+   * devices are invisible to a legacy-only scan. Not all radios support it, and
+   * an unsupported request fails the whole scan, so we fall back once.
+   */
+  const beginScan = useCallback(
+    (legacy: boolean) => {
+      manager.startDeviceScan(
+        null,
+        {
+          // The old code passed only allowDuplicates, which is iOS-only, so on
+          // Android this silently ran in the default LowPower mode: results
+          // batched and delayed by seconds. LowLatency is the right mode for a
+          // foreground hunt.
+          scanMode: ScanMode.LowLatency,
+          callbackType: ScanCallbackType.AllMatches,
+          allowDuplicates: true, // iOS
+          legacyScan: legacy,
+        },
+        (err, device: Device | null) => {
+          if (err) {
+            if (!legacy) {
+              // This radio cannot do extended advertising. Retry legacy-only.
+              manager.stopDeviceScan();
+              beginScan(true);
+              return;
+            }
+            setError(err.message);
+            setScanning(false);
+            return;
+          }
+          if (device) ingest(device);
+        },
+      );
+    },
+    [manager, ingest],
+  );
+
   const start = useCallback(async () => {
     setError(null);
     if (!(await requestPermission())) {
@@ -122,27 +202,8 @@ export function useScanner() {
     }
     store.current = {};
     setScanning(true);
-    manager.startDeviceScan(null, { allowDuplicates: true }, (err, device: Device | null) => {
-      if (err) {
-        setError(err.message);
-        setScanning(false);
-        return;
-      }
-      if (!device || device.rssi == null) return;
-      const prev = store.current[device.id];
-      const smoothed = ema(prev?.rssi ?? null, device.rssi);
-      const history = [...(prev?.history ?? []), smoothed].slice(-TAPE_LENGTH);
-      store.current[device.id] = {
-        id: device.id,
-        name: device.name ?? device.localName ?? prev?.name ?? null,
-        rssi: smoothed,
-        raw: device.rssi,
-        packets: (prev?.packets ?? 0) + 1,
-        lastSeen: Date.now(),
-        history,
-      };
-    });
-  }, [manager, requestPermission]);
+    beginScan(false);
+  }, [manager, requestPermission, beginScan]);
 
   const stop = useCallback(() => {
     manager.stopDeviceScan();

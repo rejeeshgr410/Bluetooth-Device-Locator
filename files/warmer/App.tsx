@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { SafeAreaView, StatusBar, StyleSheet } from 'react-native';
+﻿import React, { useState } from 'react';
+import { Platform, SafeAreaView, StatusBar, StyleSheet } from 'react-native';
 import { SurveyScreen } from './src/screens/SurveyScreen';
 import { HuntScreen } from './src/screens/HuntScreen';
 import { useScanner, Contact } from './src/lib/useScanner';
@@ -16,7 +16,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={c.ink} />
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
       {target ? (
         <HuntScreen target={target} contacts={contacts} onBack={() => setTarget(null)} />
       ) : (
@@ -36,5 +36,13 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: c.ink },
+  root: {
+    flex: 1,
+    backgroundColor: c.ink,
+    // SafeAreaView only applies insets on iOS. Android 15+ forces edge-to-edge,
+    // so without this the header draws underneath the clock and battery â€” which
+    // is exactly what it was doing on a Pixel running Android 17.
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
+  },
 });
+

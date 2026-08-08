@@ -1,31 +1,47 @@
 import { Platform } from 'react-native';
 
 /**
- * Amber on ink. The reference is a radio-direction-finding set, not a
- * dashboard: one live number, a phosphor trace behind it, everything else
- * dimmed so it stays readable in a dark room at arm's length.
+ * Light "Find Device" palette.
+ *
+ * This replaced the original amber-on-ink instrument look. The token NAMES are
+ * kept from that scheme so the change stayed a one-file edit rather than a
+ * sweeping rename across every component — but be warned that `amber` now
+ * holds green, `ink` is off-white, and `inkRaised` is a white card. Renaming
+ * them properly is safe to do later (the palette is a typed object, so the
+ * compiler finds every use) and worth doing before anyone new touches this.
  */
 export const c = {
-  ink: '#070B10',
-  inkRaised: '#0E141C',
-  /**
-   * Rules and borders ONLY. As a text colour this measures 1.26:1 on ink,
-   * which is not dim, it is absent. Small print goes on `dim`.
-   */
-  hairline: '#1B242F',
-  amber: '#FFB000',
-  /** Stale readout. 3.68:1 on ink — dimmed, but still readable, which is
-   *  the whole point at the moment contact is lost. */
-  amberDim: '#8A6410',
-  warm: '#63E6E2',
-  cold: '#5B6B7C',
-  text: '#E8EDF2',
-  muted: '#7C8B9A',
-  /** Small labels and secondary copy. 6.35:1 on inkRaised. */
-  dim: '#8A99A8',
-  alarm: '#FF5A47',
-  /** Proximity dial, closest band. Reads as "you have arrived". */
-  near: '#35D07F',
+  /** Page background. */
+  ink: '#F4F6F4',
+  /** Cards and raised surfaces. */
+  inkRaised: '#FFFFFF',
+  /** Borders and rules only — never text. */
+  hairline: '#E2E7E2',
+
+  /** Primary accent. Green, despite the name. */
+  amber: '#1B8A3C',
+  /** Muted accent for stale/disabled states. 3.3:1 on the page background. */
+  amberDim: '#8FA894',
+
+  /** Trend up / near. */
+  warm: '#1B8A3C',
+  /** Trend down / far. */
+  cold: '#94A3A0',
+
+  /** Primary text. 15.8:1 on the page background. */
+  text: '#151A17',
+  /** Secondary text. 5.6:1. */
+  muted: '#5F6B64',
+  /** Small labels and captions. 4.8:1. */
+  dim: '#6B7770',
+  alarm: '#C3372B',
+  /** Closest band on the dial. */
+  near: '#12752F',
+
+  /** Soft ring fills for the radar, outermost first. */
+  ring1: 'rgba(27,138,60,0.05)',
+  ring2: 'rgba(27,138,60,0.09)',
+  ring3: 'rgba(27,138,60,0.15)',
 };
 
 export const mono = Platform.select({

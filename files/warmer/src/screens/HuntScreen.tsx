@@ -4,6 +4,7 @@ import { useKeepAwake } from 'expo-keep-awake';
 import { Tape } from '../components/Tape';
 import { TrackMap } from '../components/TrackMap';
 import { ProximityDial } from '../components/ProximityDial';
+import { SignalCard } from '../components/SignalCard';
 import { c, type, mono } from '../lib/theme';
 import { band, roughRange, trend, staleWindow } from '../lib/signal';
 import { distanceTo, relativeBearing, steer } from '../lib/breadcrumbs';
@@ -77,15 +78,14 @@ export function HuntScreen({
         <Text style={styles.readoutUnit}>dBm</Text>
       </View>
 
+      {/* One line, not a paragraph. The full explanation was pushing the dial
+          itself below the fold, which defeated the point of the redesign. */}
       {isClassic && (
-        <View style={[styles.card, { borderLeftColor: c.warm, marginTop: 14 }]}>
-          <Text style={[type.band, { color: c.warm, fontSize: 12 }]}>CLASSIC BLUETOOTH</Text>
-          <Text style={type.body}>
-            This device was found by Classic inquiry, not an LE scan. It reports roughly once every
-            twelve seconds, so the number steps rather than flows — and the trail cannot work from
-            that few samples. Walk slowly and read the trend across several updates.
-          </Text>
-        </View>
+        <Text style={styles.classicNote}>
+          <Text style={{ color: c.warm, fontWeight: '700' }}>CLASSIC · </Text>
+          updates about every 12s, so the reading steps rather than flows. Trail needs more samples
+          than that.
+        </Text>
       )}
 
       <View style={styles.segment}>
@@ -102,32 +102,51 @@ export function HuntScreen({
         <>
           <ProximityDial
             rssi={live}
-            size={Math.min(width - 44, 340)}
+            size={Math.min(width - 40, 330)}
             stale={stale}
             stepped={isClassic}
+            badge={(target.name ?? '?').trim().charAt(0).toUpperCase() || '?'}
           />
 
-          <View style={[styles.trendRow, { justifyContent: 'center' }]}>
-            <View style={[styles.dot, { backgroundColor: trendColor }]} />
-            <Text style={[styles.trendText, { color: trendColor }]}>
-              {stale ? 'SIGNAL LOST' : t === 'warmer' ? 'WARMER' : t === 'colder' ? 'COLDER' : 'HOLDING'}
-            </Text>
-          </View>
-
+          <Text style={styles.headline}>
+            {stale ? 'Signal lost' : t === 'warmer' ? 'Getting warmer' : t === 'colder' ? 'Getting colder' : 'Holding steady'}
+          </Text>
           <Text style={styles.dialHint}>
             {stale
-              ? 'Nothing heard recently. Walk back the way you came, or it may have gone to sleep.'
+              ? 'Walk back the way you came, or it may have gone to sleep.'
               : (b?.hint ?? 'Waiting for a packet.')}
           </Text>
 
+          <SignalCard rssi={live} stale={stale} />
+
+          {/*
+            The reference design has a "Play Sound" button here. There is no
+            honest version of that: you cannot make an arbitrary Bluetooth
+            device emit a sound — AirTags and Tiles do it over proprietary
+            protocols with hardware they control. This is the real equivalent:
+            OUR phone clicks, faster as you close in, so you can hunt with the
+            screen in your pocket.
+          */}
+          <Pressable
+            onPress={() => setSound((v) => !v)}
+            style={[styles.cta, !sound && styles.ctaOff]}
+          >
+            <Text style={[styles.ctaTitle, !sound && { color: c.amber }]}>
+              {sound ? 'Proximity clicks on' : 'Proximity clicks off'}
+            </Text>
+            <Text style={[styles.ctaSub, !sound && { color: c.muted }]}>
+              {sound ? 'This phone clicks faster as you get closer' : 'Tap to hear how close you are'}
+            </Text>
+          </Pressable>
+
           {/* The trace still matters — a single number lies and the slope does
               not — but it is supporting evidence now, not the headline. */}
-          <Tape history={contact?.history ?? []} height={92} />
+          <Tape history={contact?.history ?? []} height={80} />
 
           <View style={styles.stats}>
             <Stat label="BEST SEEN" value={best === null ? '—' : `${best.toFixed(0)} dBm`} />
             <Stat label={isClassic ? 'SIGHTINGS' : 'PACKETS'} value={String(contact?.packets ?? 0)} />
-            <Stat label="RANGE" value={live === null ? '—' : roughRange(live)} />
+            <Stat label="NOW" value={live === null ? '—' : `${live.toFixed(0)} dBm`} />
           </View>
         </>
       ) : (
@@ -268,12 +287,36 @@ const styles = StyleSheet.create({
   readout: { flexDirection: 'row', alignItems: 'baseline', marginTop: 10, marginBottom: 2, gap: 6 },
   readoutValue: { fontFamily: mono, fontSize: 30, fontWeight: '300', letterSpacing: -1 },
   readoutUnit: { fontFamily: mono, fontSize: 13, color: c.dim, letterSpacing: 2 },
+  headline: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: c.text,
+    textAlign: 'center',
+    marginTop: 22,
+  },
   dialHint: {
     ...type.body,
     textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 22,
+    paddingHorizontal: 12,
+  },
+  cta: {
+    marginTop: 12,
+    backgroundColor: c.amber,
+    borderRadius: 18,
+    paddingHorizontal: 22,
+    paddingVertical: 18,
+  },
+  ctaOff: { backgroundColor: c.inkRaised, borderWidth: 1, borderColor: c.hairline },
+  ctaTitle: { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
+  ctaSub: { fontSize: 13, color: 'rgba(255,255,255,0.86)', marginTop: 3 },
+  classicNote: {
+    ...type.body,
+    fontSize: 12,
+    lineHeight: 17,
     marginTop: 10,
-    marginBottom: 18,
-    paddingHorizontal: 8,
+    letterSpacing: 0.2,
   },
   segment: { flexDirection: 'row', gap: 6, marginVertical: 16 },
   seg: {

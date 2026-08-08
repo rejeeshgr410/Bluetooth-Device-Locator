@@ -4,7 +4,7 @@
     "slug": "warmer",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "light",
     "scheme": "warmer",
     "ios": {
       "bundleIdentifier": "com.rejeesh.warmer",

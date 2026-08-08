@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
-import { c, mono } from '../lib/theme';
-import { band, fill, roughRange } from '../lib/signal';
+import { c } from '../lib/theme';
+import { fill } from '../lib/signal';
 
 type Props = {
   rssi: number | null;
@@ -9,161 +9,138 @@ type Props = {
   stale: boolean;
   /** Classic devices update in ~12s bursts; the dial should not pretend to flow. */
   stepped?: boolean;
+  /** Two glyphs or so, shown in the travelling puck. */
+  badge?: string;
 };
 
 /**
- * Find My-style proximity dial: a disc that grows and warms as you close in.
+ * Radar-style proximity view: nested rings, you at the centre, the target as a
+ * puck that travels inward as the signal strengthens.
  *
- * Deliberately NOT an arrow. Apple can point at an AirTag because the U1 chip
- * does angle-of-arrival over ultra-wideband. Bluetooth RSSI carries no bearing
- * whatsoever, and an arrow that looks authoritative while pointing at nothing
- * is worse than no arrow at all. Direction lives in TRAIL mode, where it is
- * earned from a walked path.
+ * The puck's ANGLE is fixed at twelve o'clock and means nothing. Only its
+ * distance from the centre carries information. Apple can place a real bearing
+ * because the U1 chip does angle-of-arrival over ultra-wideband; Bluetooth RSSI
+ * carries no direction at all, and a puck sitting at some arbitrary angle would
+ * read as "it is over there" to every single user. Direction lives in TRAIL,
+ * where a walked path earns it.
  */
-export function ProximityDial({ rssi, size, stale, stepped = false }: Props) {
-  const target = rssi === null || stale ? 0 : fill(rssi);
+export function ProximityDial({ rssi, size, stale, stepped = false, badge = '?' }: Props) {
+  const proximity = rssi === null || stale ? 0 : fill(rssi);
   const grow = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(grow, {
-      toValue: target,
-      // A stepped source jumps every ~12s; easing it over a second reads as
-      // deliberate rather than broken.
+      toValue: proximity,
       duration: stepped ? 900 : 420,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: false, // colour interpolation cannot go native
+      useNativeDriver: false, // travel distance is a layout value
     }).start();
-  }, [target, stepped, grow]);
+  }, [proximity, stepped, grow]);
 
   useEffect(() => {
-    if (target === 0) {
+    if (proximity === 0) {
       pulse.stopAnimation();
       pulse.setValue(0);
       return;
     }
-    // Closer target, quicker breath. Nothing precise, just a sense of urgency.
-    //
-    // useNativeDriver MUST stay false here. `pulse` gets multiplied against
-    // `grow` below, and `grow` is JS-driven because colour interpolation cannot
-    // run natively. Mixing the two drivers on one node throws at mount:
-    // "Attempting to run JS driven animation on animated node that has been
-    // moved to native earlier". One disc breathing is not worth the risk of
-    // splitting these across two views to reclaim the native driver.
-    const period = 1900 - target * 1100;
+    // Closer target, quicker breath.
+    const period = 2000 - proximity * 1200;
     const loop = Animated.loop(
       Animated.sequence([
+        // Must match grow's driver: these values are combined below, and mixing
+        // a native-driven node with a JS-driven one throws at mount.
         Animated.timing(pulse, { toValue: 1, duration: period / 2, easing: Easing.out(Easing.quad), useNativeDriver: false }),
         Animated.timing(pulse, { toValue: 0, duration: period / 2, easing: Easing.in(Easing.quad), useNativeDriver: false }),
       ]),
     );
     loop.start();
     return () => loop.stop();
-  }, [target, pulse]);
+  }, [proximity, pulse]);
 
-  const disc = size * 0.86;
+  const R = size / 2;
+  const puck = 62;
+  const core = size * 0.30;
 
-  const scale = grow.interpolate({ inputRange: [0, 1], outputRange: [0.22, 1] });
-  const colour = grow.interpolate({
-    inputRange: [0, 0.45, 0.75, 1],
-    outputRange: [c.cold, c.amber, c.amber, c.near],
+  // Far signal parks the puck on the outer ring; a strong one brings it home.
+  const travel = grow.interpolate({
+    inputRange: [0, 1],
+    outputRange: [R - puck / 2 - 4, R - core / 2 - puck / 2 + 10],
   });
-  const glow = grow.interpolate({ inputRange: [0, 1], outputRange: [0.16, 0.42] });
 
-  const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.13] });
-  const pulseOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.30, 0] });
-
-  const b = rssi !== null && !stale ? band(rssi) : null;
+  const haloScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.28] });
+  const haloOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.34, 0] });
 
   return (
     <View style={[styles.frame, { width: size, height: size }]}>
-      {/* Static range rings, so growth has something to be measured against. */}
-      {[1, 0.72, 0.46].map((f) => (
-        <View
-          key={f}
+      {/* Nested rings, faintest outermost. */}
+      <View style={[styles.ring, { width: size, height: size, borderRadius: R, backgroundColor: c.ring1 }]} />
+      <View style={[styles.ring, { width: size * 0.74, height: size * 0.74, borderRadius: size * 0.37, backgroundColor: c.ring2 }]} />
+      <View style={[styles.ring, { width: size * 0.50, height: size * 0.50, borderRadius: size * 0.25, backgroundColor: c.ring3 }]} />
+
+      {/* You: a white disc with a solid green core. */}
+      <View style={[styles.core, { width: core, height: core, borderRadius: core / 2 }]}>
+        <View style={[styles.coreDot, { width: core * 0.38, height: core * 0.38, borderRadius: core * 0.19 }]} />
+      </View>
+
+      {/* The target, travelling inward. Angle is fixed and carries no meaning. */}
+      <Animated.View style={[styles.puckWrap, { transform: [{ translateY: Animated.multiply(travel, -1) }] }]}>
+        <Animated.View
           style={[
-            styles.ring,
-            { width: disc * f, height: disc * f, borderRadius: (disc * f) / 2 },
+            styles.puckHalo,
+            {
+              width: puck,
+              height: puck,
+              borderRadius: puck / 2,
+              opacity: stale ? 0 : haloOpacity,
+              transform: [{ scale: haloScale }],
+            },
           ]}
         />
-      ))}
-
-      {/* Breathing halo */}
-      <Animated.View
-        style={[
-          styles.halo,
-          {
-            width: disc,
-            height: disc,
-            borderRadius: disc / 2,
-            opacity: pulseOpacity,
-            transform: [{ scale: Animated.multiply(scale, pulseScale) }],
-          },
-        ]}
-      />
-
-      {/* The disc itself */}
-      <Animated.View
-        style={[
-          styles.disc,
-          {
-            width: disc,
-            height: disc,
-            borderRadius: disc / 2,
-            backgroundColor: colour,
-            opacity: glow,
-            transform: [{ scale }],
-          },
-        ]}
-      />
-
-      {/* Readout */}
-      <View style={styles.centre} pointerEvents="none">
-        {rssi === null || stale ? (
-          <>
-            <Text style={styles.lost}>NO CONTACT</Text>
-            <Text style={styles.sub}>Walk back the way you came</Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.distance} numberOfLines={1} adjustsFontSizeToFit>
-              {roughRange(rssi)}
-            </Text>
-            <Text style={styles.bandLabel} numberOfLines={2}>
-              {b?.label}
-            </Text>
-          </>
-        )}
-      </View>
+        <View style={[styles.puck, { width: puck, height: puck, borderRadius: puck / 2, opacity: stale ? 0.45 : 1 }]}>
+          <Text style={styles.puckText} numberOfLines={1}>
+            {badge}
+          </Text>
+        </View>
+        <View style={[styles.puckPip, { backgroundColor: stale ? c.amberDim : c.amber }]} />
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   frame: { alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
-  ring: {
+  ring: { position: 'absolute' },
+  core: {
     position: 'absolute',
-    borderWidth: 1,
-    borderColor: c.hairline,
+    backgroundColor: c.inkRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1B8A3C',
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
   },
-  halo: { position: 'absolute', backgroundColor: c.warm },
-  disc: { position: 'absolute' },
-  centre: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 26 },
-  distance: {
-    fontFamily: mono,
-    fontSize: 34,
-    color: c.text,
-    letterSpacing: -0.5,
-    textAlign: 'center',
+  coreDot: { backgroundColor: c.amber },
+  puckWrap: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  puckHalo: { position: 'absolute', backgroundColor: c.amber },
+  puck: {
+    backgroundColor: c.inkRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1B8A3C',
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
   },
-  bandLabel: {
-    marginTop: 10,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 2.5,
-    color: c.dim,
-    textAlign: 'center',
+  puckText: { fontSize: 22, fontWeight: '700', color: c.text },
+  puckPip: {
+    position: 'absolute',
+    bottom: -9,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
-  lost: { fontSize: 15, fontWeight: '700', letterSpacing: 3, color: c.alarm },
-  sub: { marginTop: 8, fontSize: 13, color: c.dim, textAlign: 'center' },
 });

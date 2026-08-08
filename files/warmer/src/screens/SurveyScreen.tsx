@@ -3,34 +3,49 @@ import { View, Text, StyleSheet, FlatList, Pressable, TextInput } from 'react-na
 import { c, type, mono } from '../lib/theme';
 import { fill, kindOf, staleWindow, CLASSIC_STALE_AFTER_MS } from '../lib/signal';
 import { Contact, RadioStatus } from '../lib/useScanner';
+import type { BondedDevice } from '../../modules/classic-bluetooth';
+
+type Tab = 'nearby' | 'paired';
 
 export function SurveyScreen({
   contacts,
   scanning,
   error,
   status,
+  bonded,
   onStart,
   onStop,
   onRequestPermission,
+  onRefreshBonded,
+  onTrackBonded,
   onPick,
 }: {
   contacts: Record<string, Contact>;
   scanning: boolean;
   error: string | null;
   status: RadioStatus;
+  bonded: BondedDevice[];
   onStart: () => void;
   onStop: () => void;
   onRequestPermission: () => void;
+  onRefreshBonded: () => void;
+  onTrackBonded: (d: BondedDevice) => void;
   onPick: (contact: Contact) => void;
 }) {
   const [filter, setFilter] = useState('');
   const [now, setNow] = useState(Date.now());
   const [namedOnly, setNamedOnly] = useState(true);
+  const [tab, setTab] = useState<Tab>('nearby');
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(id);
   }, []);
+
+  // The paired list is a snapshot, not a stream — refresh whenever it is shown.
+  useEffect(() => {
+    if (tab === 'paired') onRefreshBonded();
+  }, [tab, onRefreshBonded]);
 
   const rows = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -75,6 +90,19 @@ export function SurveyScreen({
       )}
       {error && <Notice text={error} tone="alarm" />}
 
+      <View style={styles.tabs}>
+        <Pressable onPress={() => setTab('nearby')} style={[styles.tab, tab === 'nearby' && styles.tabOn]}>
+          <Text style={[styles.tabText, tab === 'nearby' && styles.tabTextOn]}>NEARBY</Text>
+        </Pressable>
+        <Pressable onPress={() => setTab('paired')} style={[styles.tab, tab === 'paired' && styles.tabOn]}>
+          <Text style={[styles.tabText, tab === 'paired' && styles.tabTextOn]}>MY DEVICES</Text>
+        </Pressable>
+      </View>
+
+      {tab === 'paired' ? (
+        <PairedList bonded={bonded} onTrack={onTrackBonded} />
+      ) : (
+      <>
       <View style={styles.controls}>
         <Pressable
           onPress={scanning ? onStop : onStart}
@@ -145,7 +173,68 @@ export function SurveyScreen({
           );
         }}
       />
+      </>
+      )}
     </View>
+  );
+}
+
+/**
+ * Paired devices. These are exactly the ones a scan can never find: connecting
+ * makes a device stop advertising, so your earbuds and watch vanish from the
+ * air the moment they attach to the phone. The pairing is still there, though,
+ * and for anything with a BLE side the link itself has a signal strength.
+ */
+function PairedList({
+  bonded,
+  onTrack,
+}: {
+  bonded: BondedDevice[];
+  onTrack: (d: BondedDevice) => void;
+}) {
+  return (
+    <FlatList
+      data={bonded}
+      keyExtractor={(d) => d.id}
+      ItemSeparatorComponent={() => <View style={styles.sep} />}
+      contentContainerStyle={{ paddingBottom: 40 }}
+      ListHeaderComponent={
+        <Text style={[type.body, { marginBottom: 14 }]}>
+          Devices paired with this phone. A connected device stops advertising, so these will not
+          appear in a scan — tracking opens a link and measures that instead.
+        </Text>
+      }
+      ListEmptyComponent={
+        <Text style={styles.empty}>
+          Nothing paired with this phone yet, or Bluetooth permission has not been granted.
+        </Text>
+      }
+      renderItem={({ item }) => {
+        const trackable = item.type === 'le' || item.type === 'dual';
+        return (
+          <Pressable
+            onPress={() => onTrack(item)}
+            disabled={!trackable}
+            style={[styles.row, !trackable && { opacity: 0.5 }]}
+          >
+            <View style={styles.rowBody}>
+              <Text style={type.item} numberOfLines={1}>
+                {item.name ?? 'Unnamed device'}
+              </Text>
+              <Text style={styles.rowMeta}>
+                {item.id} ·{' '}
+                {trackable
+                  ? item.type === 'dual'
+                    ? 'Classic + LE · trackable'
+                    : 'LE · trackable'
+                  : 'Classic only · no signal link'}
+              </Text>
+            </View>
+            {trackable && <Text style={styles.trackCta}>TRACK</Text>}
+          </Pressable>
+        );
+      }}
+    />
   );
 }
 
@@ -161,6 +250,19 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: c.ink, padding: 22 },
   header: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 20 },
   wordmark: { fontSize: 22, fontWeight: '800', color: c.text, letterSpacing: 6 },
+  tabs: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  tab: {
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: c.hairline,
+    backgroundColor: c.inkRaised,
+  },
+  tabOn: { backgroundColor: c.amber, borderColor: c.amber },
+  tabText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, color: c.muted },
+  tabTextOn: { color: '#FFFFFF' },
+  trackCta: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, color: c.amber },
   controls: { flexDirection: 'row', gap: 10, marginBottom: 12 },
   button: {
     flex: 1,

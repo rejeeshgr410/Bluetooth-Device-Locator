@@ -6,7 +6,18 @@ import { useScanner, Contact } from './src/lib/useScanner';
 import { c } from './src/lib/theme';
 
 export default function App() {
-  const { contacts, scanning, status, error, start, stop, requestPermission } = useScanner();
+  const {
+    contacts,
+    scanning,
+    status,
+    error,
+    bonded,
+    refreshBonded,
+    trackBonded,
+    start,
+    stop,
+    requestPermission,
+  } = useScanner();
   const [target, setTarget] = useState<{ id: string; name: string | null } | null>(null);
 
   // No restart-on-select effect here. start() wipes the store before rescanning,
@@ -28,6 +39,14 @@ export default function App() {
           onStart={start}
           onStop={stop}
           onRequestPermission={requestPermission}
+          bonded={bonded}
+          onRefreshBonded={refreshBonded}
+          // Only navigate once the link is actually up, so a failed connect
+          // leaves you on the list with the reason rather than on a dead
+          // hunt screen showing NO CONTACT.
+          onTrackBonded={async (d) => {
+            if (await trackBonded(d)) setTarget({ id: d.id, name: d.name });
+          }}
           onPick={(d: Contact) => setTarget({ id: d.id, name: d.name })}
         />
       )}

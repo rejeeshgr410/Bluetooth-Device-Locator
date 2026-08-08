@@ -9,7 +9,11 @@ import {
 } from 'react-native-ble-plx';
 import { ema, staleWindow } from './signal';
 import { describe } from './vendors';
-import { ClassicBluetooth, type ClassicDevice } from '../../modules/classic-bluetooth';
+import {
+  ClassicBluetooth,
+  type ClassicDevice,
+  type BondedDevice,
+} from '../../modules/classic-bluetooth';
 import type { EventSubscription } from 'expo-modules-core';
 
 export type Contact = {
@@ -20,6 +24,8 @@ export type Contact = {
   label: string;
   /** Found via Classic (BR/EDR) inquiry rather than an LE scan. */
   classic: boolean;
+  /** RSSI read over a GATT link to a paired device, not from an advertisement. */
+  bonded: boolean;
   rssi: number;        // smoothed
   raw: number;         // last packet
   packets: number;
@@ -80,6 +86,9 @@ export function useScanner() {
   const store = useRef<Record<string, Contact>>({});
   const classicSubs = useRef<EventSubscription[]>([]);
   const classicWanted = useRef(false);
+  const [bonded, setBonded] = useState<BondedDevice[]>([]);
+  const bondedTimer = useRef<number | null>(null);
+  const bondedId = useRef<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -92,6 +101,8 @@ export function useScanner() {
       classicSubs.current.forEach((s) => s.remove());
       classicSubs.current = [];
       ClassicBluetooth?.stopDiscovery().catch(() => {});
+      if (bondedTimer.current !== null) clearInterval(bondedTimer.current);
+      bondedTimer.current = null;
       manager.stopDeviceScan();
       manager.destroy();
     };
@@ -160,6 +171,7 @@ export function useScanner() {
       name,
       label,
       classic: false,
+      bonded: false,
       rssi: smoothed,
       raw: device.rssi,
       packets: (prev?.packets ?? 0) + 1,
@@ -182,6 +194,7 @@ export function useScanner() {
       name,
       label: name ?? prev?.label ?? 'Unnamed (Classic)',
       classic: true,
+      bonded: false,
       rssi: d.rssi,
       raw: d.rssi,
       packets: (prev?.packets ?? 0) + 1,
@@ -278,9 +291,102 @@ export function useScanner() {
     startClassic();
   }, [manager, requestPermission, beginScan, startClassic]);
 
+  /** Paired devices, whether or not they are advertising. */
+  const refreshBonded = useCallback(() => {
+    const mod = ClassicBluetooth;
+    if (!mod) return;
+    try {
+      setBonded(mod.getBondedDevices());
+    } catch {
+      setBonded([]);
+    }
+  }, []);
+
+  const stopBonded = useCallback(() => {
+    if (bondedTimer.current !== null) {
+      clearInterval(bondedTimer.current);
+      bondedTimer.current = null;
+    }
+    const id = bondedId.current;
+    bondedId.current = null;
+    if (id) manager.cancelDeviceConnection(id).catch(() => {});
+  }, [manager]);
+
+  /**
+   * Track a paired device by holding a GATT link open and polling its RSSI.
+   *
+   * This is the only way to hunt something that is connected: earbuds and
+   * watches stop advertising the moment they pair, so a scan will never see
+   * them. The link itself still has a measurable signal strength.
+   *
+   * Classic-only devices have no GATT to connect to, so they are rejected up
+   * front rather than left spinning on a connect that cannot succeed.
+   */
+  const trackBonded = useCallback(
+    async (d: BondedDevice): Promise<boolean> => {
+      setError(null);
+      stopBonded();
+
+      if (d.type === 'classic') {
+        setError(
+          `${d.name ?? 'This device'} is Classic-only, so there is no GATT link to measure. Put it in pairing mode and use the scan instead.`,
+        );
+        return false;
+      }
+      if (!(await requestPermission())) {
+        setError('Bluetooth permission was denied.');
+        return false;
+      }
+
+      try {
+        const dev = await manager.connectToDevice(d.id, { timeout: 12000 });
+        bondedId.current = d.id;
+
+        const sample = async () => {
+          try {
+            const updated = await dev.readRSSI();
+            if (updated.rssi != null) {
+              const prev = store.current[d.id];
+              const smoothed = ema(prev?.rssi ?? null, updated.rssi);
+              const history = [...(prev?.history ?? []), smoothed].slice(-TAPE_LENGTH);
+              store.current[d.id] = {
+                id: d.id,
+                name: d.name,
+                label: d.name ?? 'Paired device',
+                classic: false,
+                bonded: true,
+                rssi: smoothed,
+                raw: updated.rssi,
+                packets: (prev?.packets ?? 0) + 1,
+                lastSeen: Date.now(),
+                history,
+              };
+            }
+          } catch {
+            // Link dropped. Leave the last reading to go stale naturally
+            // rather than yanking the row out from under the hunt screen.
+          }
+        };
+
+        await sample();
+        bondedTimer.current = setInterval(sample, 1000) as unknown as number;
+        setScanning(true);
+        return true;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Could not connect';
+        setError(
+          `Could not open a link to ${d.name ?? d.id}: ${msg}. It may be out of range, or connected to another phone.`,
+        );
+        return false;
+      }
+    },
+    [manager, requestPermission, stopBonded],
+  );
+
   const stop = useCallback(() => {
     manager.stopDeviceScan();
     stopClassic();
+    stopBonded();
     // Clear the store too. Rows are filtered on lastSeen, so without this a
     // stopped scan still showed devices for another twenty seconds — readings
     // that are no longer being taken.
@@ -296,6 +402,9 @@ export function useScanner() {
     error,
     classicError,
     classicSupported: !!ClassicBluetooth,
+    bonded,
+    refreshBonded,
+    trackBonded,
     start,
     stop,
     requestPermission,

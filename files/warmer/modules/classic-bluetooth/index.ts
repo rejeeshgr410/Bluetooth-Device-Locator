@@ -8,6 +8,14 @@ export type ClassicDevice = {
   rssi: number;
 };
 
+/** A device this phone is paired with, advertising or not. */
+export type BondedDevice = {
+  id: string;
+  name: string | null;
+  /** 'classic' cannot report RSSI over GATT; 'le' and 'dual' can. */
+  type: 'classic' | 'le' | 'dual' | 'unknown';
+};
+
 type ClassicBluetoothEvents = {
   onDeviceFound: (device: ClassicDevice) => void;
   onDiscoveryFinished: () => void;
@@ -15,6 +23,7 @@ type ClassicBluetoothEvents = {
 
 declare class ClassicBluetoothNativeModule extends NativeModule<ClassicBluetoothEvents> {
   isSupported(): boolean;
+  getBondedDevices(): BondedDevice[];
   startDiscovery(): Promise<void>;
   stopDiscovery(): Promise<void>;
 }

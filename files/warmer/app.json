@@ -11,7 +11,9 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Warmer reads the signal strength of nearby Bluetooth devices so you can walk toward the one you lost.",
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -34,14 +36,23 @@
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": false,
-          "modes": ["peripheral", "central"],
+          "modes": [
+            "peripheral",
+            "central"
+          ],
           "bluetoothAlwaysPermission": "Warmer reads the signal strength of nearby Bluetooth devices so you can walk toward the one you lost."
         }
       ],
       [
         "expo-build-properties",
-        { "android": { "minSdkVersion": 24 } }
-      ]
+        {
+          "android": {
+            "minSdkVersion": 24
+          }
+        }
+      ],
+      "expo-asset",
+      "expo-font"
     ]
   }
 }

@@ -24,6 +24,8 @@ export const c = {
   /** Small labels and secondary copy. 6.35:1 on inkRaised. */
   dim: '#8A99A8',
   alarm: '#FF5A47',
+  /** Proximity dial, closest band. Reads as "you have arrived". */
+  near: '#35D07F',
 };
 
 export const mono = Platform.select({

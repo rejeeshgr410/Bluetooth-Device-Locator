@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, Switch, ScrollView, useWindowDimensi
 import { useKeepAwake } from 'expo-keep-awake';
 import { Tape } from '../components/Tape';
 import { TrackMap } from '../components/TrackMap';
+import { ProximityDial } from '../components/ProximityDial';
 import { c, type, mono } from '../lib/theme';
 import { band, roughRange, trend, staleWindow } from '../lib/signal';
 import { distanceTo, relativeBearing, steer } from '../lib/breadcrumbs';
@@ -67,11 +68,13 @@ export function HuntScreen({
       </Text>
       <Text style={styles.id}>{target.id}</Text>
 
+      {/* Compact now: in METER the dial is the headline, in TRAIL the map is.
+          A 92pt number competing with either just split the attention. */}
       <View style={styles.readout}>
-        <Text style={[type.reading, { color: stale ? c.amberDim : c.amber }]}>
+        <Text style={[styles.readoutValue, { color: stale ? c.amberDim : c.amber }]}>
           {live === null ? '––' : live.toFixed(0)}
         </Text>
-        <Text style={type.unit}>dBm</Text>
+        <Text style={styles.readoutUnit}>dBm</Text>
       </View>
 
       {isClassic && (
@@ -97,28 +100,34 @@ export function HuntScreen({
 
       {mode === 'meter' ? (
         <>
-          <Tape history={contact?.history ?? []} />
-          <View style={styles.trendRow}>
+          <ProximityDial
+            rssi={live}
+            size={Math.min(width - 44, 340)}
+            stale={stale}
+            stepped={isClassic}
+          />
+
+          <View style={[styles.trendRow, { justifyContent: 'center' }]}>
             <View style={[styles.dot, { backgroundColor: trendColor }]} />
             <Text style={[styles.trendText, { color: trendColor }]}>
               {stale ? 'SIGNAL LOST' : t === 'warmer' ? 'WARMER' : t === 'colder' ? 'COLDER' : 'HOLDING'}
             </Text>
           </View>
 
-          <View style={styles.card}>
-            <Text style={[type.band, { color: stale ? c.muted : c.amber }]}>
-              {b?.label ?? 'WAITING FOR A PACKET'}
-            </Text>
-            <Text style={type.body}>
-              {stale
-                ? 'Nothing heard for five seconds. Walk back the way you came, or the device may have gone to sleep.'
-                : b?.hint}
-            </Text>
-            <View style={styles.stats}>
-              <Stat label="ROUGH RANGE" value={live === null ? '—' : roughRange(live)} />
-              <Stat label="BEST SEEN" value={best === null ? '—' : `${best.toFixed(0)} dBm`} />
-              <Stat label="PACKETS" value={String(contact?.packets ?? 0)} />
-            </View>
+          <Text style={styles.dialHint}>
+            {stale
+              ? 'Nothing heard recently. Walk back the way you came, or it may have gone to sleep.'
+              : (b?.hint ?? 'Waiting for a packet.')}
+          </Text>
+
+          {/* The trace still matters — a single number lies and the slope does
+              not — but it is supporting evidence now, not the headline. */}
+          <Tape history={contact?.history ?? []} height={92} />
+
+          <View style={styles.stats}>
+            <Stat label="BEST SEEN" value={best === null ? '—' : `${best.toFixed(0)} dBm`} />
+            <Stat label={isClassic ? 'SIGHTINGS' : 'PACKETS'} value={String(contact?.packets ?? 0)} />
+            <Stat label="RANGE" value={live === null ? '—' : roughRange(live)} />
           </View>
         </>
       ) : (
@@ -256,7 +265,16 @@ const styles = StyleSheet.create({
   back: { ...type.eyebrow, color: c.amber },
   name: { fontSize: 26, color: c.text, fontWeight: '600' },
   id: { fontFamily: mono, fontSize: 11, color: c.muted, marginTop: 4 },
-  readout: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 18, marginBottom: 6 },
+  readout: { flexDirection: 'row', alignItems: 'baseline', marginTop: 10, marginBottom: 2, gap: 6 },
+  readoutValue: { fontFamily: mono, fontSize: 30, fontWeight: '300', letterSpacing: -1 },
+  readoutUnit: { fontFamily: mono, fontSize: 13, color: c.dim, letterSpacing: 2 },
+  dialHint: {
+    ...type.body,
+    textAlign: 'center',
+    marginTop: 10,
+    marginBottom: 18,
+    paddingHorizontal: 8,
+  },
   segment: { flexDirection: 'row', gap: 6, marginVertical: 16 },
   seg: {
     paddingHorizontal: 18,

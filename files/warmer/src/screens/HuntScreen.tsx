@@ -12,7 +12,7 @@ import { band, roughRange, trend, staleWindow } from '../lib/signal';
 import { distanceTo, relativeBearing, steer } from '../lib/breadcrumbs';
 import { Contact } from '../lib/useScanner';
 import { useClicker } from '../lib/useClicker';
-import { useTrail } from '../lib/useTrail';
+import { useTrail, calibrateTxPower } from '../lib/useTrail';
 
 type Mode = 'meter' | 'compass' | 'trail';
 
@@ -52,7 +52,20 @@ export function HuntScreen({
   const t = useMemo(() => (contact ? trend(contact.history) : 'steady'), [contact?.history]);
   useClicker({ rssi: live, active: !stale, sound, haptics });
 
-  const trail = useTrail({ rssi: live, active: mode === 'trail' });
+  /*
+   * Reference power at 1 m, measured for this specific device.
+   *
+   * Assuming the -59 dBm textbook value was the largest single source of
+   * error in simulation — 8.85 m of it, more than shadowing or compass bias.
+   * Real transmitters vary by 10-20 dB, so one calibration reading is worth
+   * more than any refinement downstream.
+   */
+  const [txPower, setTxPower] = useState<number | undefined>(undefined);
+  const calibrate = () => {
+    if (live !== null) setTxPower(calibrateTxPower(live, 1));
+  };
+
+  const trail = useTrail({ rssi: live, active: mode === 'trail', txPower });
   const dir = useDirectionScan(live);
 
   const b = live !== null ? band(live) : null;
@@ -214,7 +227,13 @@ export function HuntScreen({
           </View>
         </>
       ) : (
-        <TrailPanel trail={trail} width={width - 44} live={live} />
+        <TrailPanel
+          trail={trail}
+          width={width - 44}
+          live={live}
+          calibrated={txPower !== undefined}
+          onCalibrate={calibrate}
+        />
       )}
 
       <View style={styles.toggles}>
@@ -235,10 +254,14 @@ function TrailPanel({
   trail,
   width,
   live,
+  calibrated,
+  onCalibrate,
 }: {
   trail: ReturnType<typeof useTrail>;
   width: number;
   live: number | null;
+  calibrated: boolean;
+  onCalibrate: () => void;
 }) {
   const { fix, crumbs, track, estimate, dropManual, clear, available } = trail;
   const showArrow = crumbs.length >= 2;
@@ -260,6 +283,21 @@ function TrailPanel({
   return (
     <>
       <TrackMap track={track} crumbs={crumbs} estimate={estimate} fix={fix} size={width} />
+
+      {/*
+        Calibration first. Simulation ranked the assumed reference power as the
+        largest single error source — bigger than shadowing or compass bias —
+        and one reading at a known distance removes it outright.
+      */}
+      {!calibrated && (
+        <Pressable onPress={onCalibrate} disabled={live === null} style={[styles.card, { marginTop: 14, borderLeftColor: c.amber }]}>
+          <Text style={[type.band, { color: c.amber, fontSize: 12 }]}>CALIBRATE FOR ACCURACY</Text>
+          <Text style={type.body}>
+            Stand about one metre from the device and tap here. Transmitters vary by 10–20 dB, and
+            guessing that figure is the biggest cause of a wrong distance.
+          </Text>
+        </Pressable>
+      )}
 
       <View style={styles.card}>
         <Text style={[type.band, { color: showArrow ? c.amber : c.muted }]}>

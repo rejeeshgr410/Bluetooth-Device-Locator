@@ -4,7 +4,9 @@ import { useKeepAwake } from 'expo-keep-awake';
 import { Tape } from '../components/Tape';
 import { TrackMap } from '../components/TrackMap';
 import { ProximityDial } from '../components/ProximityDial';
+import { CompassDial } from '../components/CompassDial';
 import { SignalCard } from '../components/SignalCard';
+import { useDirectionScan } from '../lib/useDirectionScan';
 import { c, type, mono } from '../lib/theme';
 import { band, roughRange, trend, staleWindow } from '../lib/signal';
 import { distanceTo, relativeBearing, steer } from '../lib/breadcrumbs';
@@ -12,7 +14,7 @@ import { Contact } from '../lib/useScanner';
 import { useClicker } from '../lib/useClicker';
 import { useTrail } from '../lib/useTrail';
 
-type Mode = 'meter' | 'trail';
+type Mode = 'meter' | 'compass' | 'trail';
 
 export function HuntScreen({
   target,
@@ -51,6 +53,7 @@ export function HuntScreen({
   useClicker({ rssi: live, active: !stale, sound, haptics });
 
   const trail = useTrail({ rssi: live, active: mode === 'trail' });
+  const dir = useDirectionScan(live);
 
   const b = live !== null ? band(live) : null;
   const trendColor = t === 'warmer' ? c.warm : t === 'colder' ? c.cold : c.muted;
@@ -90,6 +93,7 @@ export function HuntScreen({
 
       <View style={styles.segment}>
         <Seg label="METER" active={mode === 'meter'} onPress={() => setMode('meter')} />
+        <Seg label="COMPASS" active={mode === 'compass'} onPress={() => setMode('compass')} />
         <Seg
           label="TRAIL"
           active={mode === 'trail'}
@@ -98,7 +102,67 @@ export function HuntScreen({
         />
       </View>
 
-      {mode === 'meter' ? (
+      {mode === 'compass' ? (
+        <>
+          <CompassDial
+            size={Math.min(width - 40, 330)}
+            rssi={live}
+            stale={stale}
+            heading={dir.heading}
+            bearing={dir.bearing}
+            spread={dir.spread}
+            confidence={dir.confidence}
+          />
+
+          <View style={{ height: 74 }} />
+
+          <Text style={styles.headline}>
+            {dir.sampling
+              ? dir.coverage < 0.6
+                ? 'Keep turning…'
+                : 'Reading the sweep'
+              : dir.bearing === null
+                ? 'No bearing yet'
+                : `Signal strongest ${Math.round(dir.bearing)}°`}
+          </Text>
+          <Text style={styles.dialHint}>
+            {dir.sampling
+              ? `Turn slowly, all the way round. ${Math.round(dir.coverage * 100)}% of the circle covered.`
+              : dir.bearing === null
+                ? 'Direction comes from turning: your body blocks the signal on one side, so the peak as you spin points at the source.'
+                : `Confidence ${dir.confidence}, ±${Math.round(dir.spread)}°. Walk into the wedge, then sweep again.`}
+          </Text>
+
+          <Pressable
+            onPress={dir.sampling ? dir.cancel : dir.start}
+            disabled={stale}
+            style={[styles.cta, (dir.sampling || stale) && styles.ctaOff]}
+          >
+            <Text style={[styles.ctaTitle, (dir.sampling || stale) && { color: c.amber }]}>
+              {dir.sampling ? 'Stop sweeping' : 'Sweep for direction'}
+            </Text>
+            <Text style={[styles.ctaSub, (dir.sampling || stale) && { color: c.muted }]}>
+              {stale
+                ? 'Needs a live signal first'
+                : dir.sampling
+                  ? 'Hold the phone out and rotate on the spot'
+                  : 'Turn a full circle while it samples every heading'}
+            </Text>
+          </Pressable>
+
+          {/*
+            Said plainly, because the wedge looks more authoritative than the
+            method deserves. One antenna cannot do angle-of-arrival; this is
+            body-shadow direction finding and rooms full of reflections will
+            fool it.
+          */}
+          <Text style={styles.caveat}>
+            The bearing is inferred from how your own body blocks the signal as you turn, not from
+            true angle-of-arrival — a phone has one antenna and cannot measure that. Walls and metal
+            bounce 2.4 GHz badly, so treat the wedge as a sector to explore, never a line to follow.
+          </Text>
+        </>
+      ) : mode === 'meter' ? (
         <>
           <ProximityDial
             rssi={live}

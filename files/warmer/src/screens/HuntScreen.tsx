@@ -125,6 +125,7 @@ export function HuntScreen({
             bearing={dir.bearing}
             spread={dir.spread}
             confidence={dir.confidence}
+            txPower={txPower}
           />
 
           <View style={{ height: 74 }} />
@@ -194,7 +195,7 @@ export function HuntScreen({
               : (b?.hint ?? 'Waiting for a packet.')}
           </Text>
 
-          <SignalCard rssi={live} stale={stale} />
+          <SignalCard rssi={live} stale={stale} txPower={txPower} />
 
           {/*
             The reference design has a "Play Sound" button here. There is no

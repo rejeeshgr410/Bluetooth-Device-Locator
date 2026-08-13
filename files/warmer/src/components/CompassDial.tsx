@@ -15,6 +15,8 @@ type Props = {
   /** Half-width of the wedge in degrees — the honest uncertainty. */
   spread: number;
   confidence: DirectionConfidence;
+  /** Calibrated reference power, so this agrees with every other screen. */
+  txPower?: number;
 };
 
 const TICKS = 36;
@@ -36,7 +38,7 @@ const CARDINALS: Array<[string, number]> = [
  * shadowing DF, which is good to a few tens of degrees at best, and an arrow
  * would claim a precision the physics cannot support.
  */
-export function CompassDial({ size, rssi, stale, heading, bearing, spread, confidence }: Props) {
+export function CompassDial({ size, rssi, stale, heading, bearing, spread, confidence, txPower }: Props) {
   const R = size / 2;
   const live = rssi !== null && !stale;
   const b = live ? band(rssi!) : null;
@@ -159,7 +161,7 @@ export function CompassDial({ size, rssi, stale, heading, bearing, spread, confi
 
       <View style={[styles.readout, { top: R + hub / 2 + 14 }]}>
         <Text style={styles.distance} numberOfLines={1} adjustsFontSizeToFit>
-          {live ? roughRange(rssi!) : '—'}
+          {live ? roughRange(rssi!, txPower) : '—'}
         </Text>
         <Text style={styles.sub}>{live ? (b?.label ?? '').toLowerCase() : 'no contact'}</Text>
       </View>

@@ -6,6 +6,8 @@ import { gridLocate, calibrateTxPower, DEFAULT_TX_POWER, type Sample } from './l
 const SAMPLE_MS = 400;
 const TRACK_LIMIT = 400;
 const SAMPLE_LIMIT = 600;
+/** Marks were the one unbounded collection here; everything else was capped. */
+const CRUMB_LIMIT = 250;
 
 export function useTrail(opts: {
   rssi: number | null;
@@ -50,10 +52,12 @@ export function useTrail(opts: {
       const { candidate, commit } = detectPeak(peak.current, { x: f.x, y: f.y, rssi: r });
       peak.current = candidate;
       if (commit) {
-        setCrumbs((prev) => [
-          ...prev,
-          { id: nextId.current++, x: commit.x, y: commit.y, rssi: commit.rssi, at: Date.now(), manual: false },
-        ]);
+        setCrumbs((prev) =>
+          [
+            ...prev,
+            { id: nextId.current++, x: commit.x, y: commit.y, rssi: commit.rssi, at: Date.now(), manual: false },
+          ].slice(-CRUMB_LIMIT),
+        );
       }
     }, SAMPLE_MS);
     return () => clearInterval(id);
@@ -62,10 +66,12 @@ export function useTrail(opts: {
   const dropManual = useCallback(() => {
     const { rssi: r, fix: f } = latest.current;
     if (r == null) return;
-    setCrumbs((prev) => [
-      ...prev,
-      { id: nextId.current++, x: f.x, y: f.y, rssi: r, at: Date.now(), manual: true },
-    ]);
+    setCrumbs((prev) =>
+      [
+        ...prev,
+        { id: nextId.current++, x: f.x, y: f.y, rssi: r, at: Date.now(), manual: true },
+      ].slice(-CRUMB_LIMIT),
+    );
   }, []);
 
   const clear = useCallback(() => {

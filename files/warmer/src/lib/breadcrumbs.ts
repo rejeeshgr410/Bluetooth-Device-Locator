@@ -52,6 +52,23 @@ export type Estimate = {
   method: 'centroid' | 'trilateration';
 };
 
+/*
+ * Loops, not Math.max(...array). The spread form passes one argument per
+ * element and blows the call stack on large inputs — measured as RangeError at
+ * 200,000 marks. Marks are capped in the app, but a library function should not
+ * depend on its caller remembering that.
+ */
+function maxOf(xs: number[]): number {
+  let m = -Infinity;
+  for (let i = 0; i < xs.length; i++) if (xs[i] > m) m = xs[i];
+  return m;
+}
+function minOf(xs: number[]): number {
+  let m = Infinity;
+  for (let i = 0; i < xs.length; i++) if (xs[i] < m) m = xs[i];
+  return m;
+}
+
 /**
  * Extent of the marks along and across their own principal axis.
  *
@@ -165,7 +182,7 @@ export function trilaterate(
 
   if (!isFinite(px) || !isFinite(py)) return null;
   // Anything this far from every mark is the solver diverging, not a finding.
-  const nearest = Math.min(...crumbs.map((cr) => Math.hypot(px - cr.x, py - cr.y)));
+  const nearest = minOf(crumbs.map((cr) => Math.hypot(px - cr.x, py - cr.y)));
   if (nearest > 60) return null;
 
   return { x: px, y: py };
@@ -189,7 +206,7 @@ export function estimate(crumbs: Crumb[]): Estimate {
     };
   }
 
-  const best = Math.max(...crumbs.map((c) => c.rssi));
+  const best = maxOf(crumbs.map((c) => c.rssi));
   let wx = 0;
   let wy = 0;
   let sum = 0;
@@ -209,10 +226,15 @@ export function estimate(crumbs: Crumb[]): Estimate {
   const y = solved?.y ?? cy;
   const method: Estimate['method'] = solved ? 'trilateration' : 'centroid';
 
-  const spread = Math.max(
-    ...crumbs.map((a) => Math.max(...crumbs.map((b) => Math.hypot(a.x - b.x, a.y - b.y)))),
-    0,
-  );
+  /*
+   * Extent of the cloud, O(n), from the principal axes we already have.
+   *
+   * This replaced an all-pairs maximum that was O(n^2) AND used spread
+   * arguments on Math.max. Measured: 20,000 marks took 16 seconds — a frozen
+   * UI — and 200,000 threw RangeError: Maximum call stack size exceeded. The
+   * marks are capped now too, but the quadratic scan had to go regardless.
+   */
+  const spread = Math.hypot(axes.along, axes.across);
 
   if (crumbs.length < 3) {
     return {

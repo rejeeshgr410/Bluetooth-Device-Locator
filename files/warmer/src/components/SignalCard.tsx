@@ -12,7 +12,16 @@ const STRENGTH: Record<string, string> = {
   veryFar: 'Very weak',
 };
 
-export function SignalCard({ rssi, stale }: { rssi: number | null; stale: boolean }) {
+export function SignalCard({
+  rssi,
+  stale,
+  txPower,
+}: {
+  rssi: number | null;
+  stale: boolean;
+  /** Calibrated reference power. Without it this card contradicts TRAIL. */
+  txPower?: number;
+}) {
   const live = rssi !== null && !stale;
   const b = live ? band(rssi!) : null;
   const bars = live ? Math.max(1, Math.ceil(fill(rssi!) * 5)) : 0;
@@ -29,7 +38,9 @@ export function SignalCard({ rssi, stale }: { rssi: number | null; stale: boolea
           {/* Coarse on purpose. RSSI cannot support a confident single number:
               a phone in a drawer two metres away reads like one fifteen metres
               away in the open. */}
-          <Text style={styles.range}>{live ? roughRange(rssi!) : 'nothing heard recently'}</Text>
+          <Text style={styles.range}>
+            {live ? roughRange(rssi!, txPower) : 'nothing heard recently'}
+          </Text>
         </View>
 
         <View style={styles.bars}>

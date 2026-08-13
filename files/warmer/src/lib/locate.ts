@@ -70,7 +70,15 @@ export function gridLocate(
   const txPower = opts.txPower ?? DEFAULT_TX_POWER;
   const n = opts.n ?? DEFAULT_PATH_LOSS;
   const sigma = opts.sigma ?? DEFAULT_SIGMA;
-  const cells = opts.cells ?? 96;
+  /*
+   * 64 rather than 96. The grid pass is cells^2 * bins and this runs inside a
+   * useMemo that re-fires on every sample tick: at 96 cells and 600 samples it
+   * measured 159 ms, which is most of a 400 ms budget spent on the JS thread.
+   * Dropping to 64 is 2.25x cheaper, and at ~0.3 m per cell over a typical
+   * search area the resolution is still far finer than the metre-scale
+   * uncertainty the readings actually carry.
+   */
+  const cells = opts.cells ?? 64;
 
   if (samples.length < 3) return null;
 
@@ -96,12 +104,20 @@ export function gridLocate(
       bins.set(key, { x: s.x, y: s.y, sum: s.rssi, count: 1 });
     }
   }
-  const use: Sample[] = Array.from(bins.values()).map((b) => ({
+  let use: Sample[] = Array.from(bins.values()).map((b) => ({
     x: b.x,
     y: b.y,
     rssi: b.sum / b.count,
   }));
   if (use.length < 3) return null;
+
+  // Hard ceiling on the inner loop. Past ~150 distinct places the answer stops
+  // moving, so thin evenly rather than let the cost grow without limit.
+  const MAX_BINS = 150;
+  if (use.length > MAX_BINS) {
+    const stride = Math.ceil(use.length / MAX_BINS);
+    use = use.filter((_, i) => i % stride === 0);
+  }
 
   // Search area: everywhere the strongest reading could plausibly have come
   // from, padded around the walked extent.

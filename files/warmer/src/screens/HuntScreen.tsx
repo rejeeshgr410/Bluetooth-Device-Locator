@@ -66,7 +66,9 @@ export function HuntScreen({
   };
 
   const trail = useTrail({ rssi: live, active: mode === 'trail', txPower });
-  const dir = useDirectionScan(live);
+  // Packet count is the freshness signal: it only advances on a genuinely new
+  // reading, so the sweep never bins the same measurement under two headings.
+  const dir = useDirectionScan(live, contact?.packets);
 
   const b = live !== null ? band(live) : null;
   const trendColor = t === 'warmer' ? c.warm : t === 'colder' ? c.cold : c.muted;

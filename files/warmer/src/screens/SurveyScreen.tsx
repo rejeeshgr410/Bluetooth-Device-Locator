@@ -64,8 +64,20 @@ export function SurveyScreen({
       .sort((a, b) => b.rssi - a.rssi);
   }, [contacts, filter, now, namedOnly]);
 
-  return (
-    <View style={styles.page}>
+  /*
+   * The chrome scrolls with the list rather than sitting fixed above it.
+   *
+   * In landscape the emulator showed the header, tabs, controls and filter
+   * eating almost the whole 393dp viewport, leaving room for about two device
+   * rows against eight in portrait. Moving it into ListHeaderComponent gives
+   * the list the full height once you scroll.
+   *
+   * Passed as an ELEMENT, never as `() => <Header/>`: an inline function is a
+   * new component type on every render, which unmounts and remounts the filter
+   * field and would steal focus mid-keystroke.
+   */
+  const chrome = (
+    <>
       <View style={styles.header}>
         <Text style={styles.wordmark}>WARMER</Text>
         <Text style={type.eyebrow}>SIGNAL HUNT</Text>
@@ -99,9 +111,7 @@ export function SurveyScreen({
         </Pressable>
       </View>
 
-      {tab === 'paired' ? (
-        <PairedList bonded={bonded} onTrack={onTrackBonded} />
-      ) : (
+      {tab === 'nearby' && (
       <>
       <View style={styles.controls}>
         <Pressable
@@ -133,10 +143,21 @@ export function SurveyScreen({
         autoCapitalize="none"
         autoCorrect={false}
       />
+      </>
+      )}
+    </>
+  );
 
+  return (
+    <View style={styles.page}>
+      {tab === 'paired' ? (
+        <PairedList bonded={bonded} onTrack={onTrackBonded} chrome={chrome} />
+      ) : (
       <FlatList
         data={rows}
         keyExtractor={(d) => d.id}
+        ListHeaderComponent={chrome}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: 40 }}
         ItemSeparatorComponent={() => <View style={styles.sep} />}
         ListEmptyComponent={
@@ -173,7 +194,6 @@ export function SurveyScreen({
           );
         }}
       />
-      </>
       )}
     </View>
   );
@@ -188,9 +208,11 @@ export function SurveyScreen({
 function PairedList({
   bonded,
   onTrack,
+  chrome,
 }: {
   bonded: BondedDevice[];
   onTrack: (d: BondedDevice) => void;
+  chrome: React.ReactNode;
 }) {
   return (
     <FlatList
@@ -199,10 +221,13 @@ function PairedList({
       ItemSeparatorComponent={() => <View style={styles.sep} />}
       contentContainerStyle={{ paddingBottom: 40 }}
       ListHeaderComponent={
-        <Text style={[type.body, { marginBottom: 14 }]}>
-          Devices paired with this phone. A connected device stops advertising, so these will not
-          appear in a scan — tracking opens a link and measures that instead.
-        </Text>
+        <>
+          {chrome}
+          <Text style={[type.body, { marginBottom: 14 }]}>
+            Devices paired with this phone. A connected device stops advertising, so these will not
+            appear in a scan — tracking opens a link and measures that instead.
+          </Text>
+        </>
       }
       ListEmptyComponent={
         <Text style={styles.empty}>

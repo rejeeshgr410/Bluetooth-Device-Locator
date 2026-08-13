@@ -44,7 +44,7 @@ function angleDelta(a: number, b: number): number {
   return d;
 }
 
-export function useDirectionScan(rssi: number | null) {
+export function useDirectionScan(rssi: number | null, stamp?: number) {
   const [fix, setFix] = useState<DirectionFix>({
     bearing: null,
     confidence: 'none',
@@ -55,11 +55,18 @@ export function useDirectionScan(rssi: number | null) {
     prominence: 0,
   });
 
+  /** Smoothed, for the dial. Lag here is pleasant to look at. */
   const heading = useRef(0);
+  /** Unsmoothed, for binning. Lag here would file readings under the wrong sector. */
+  const headingRaw = useRef(0);
   const best = useRef<Array<number | null>>(new Array(SECTORS).fill(null));
   const sampling = useRef(false);
   const latestRssi = useRef(rssi);
   latestRssi.current = rssi;
+  const latestStamp = useRef(stamp);
+  latestStamp.current = stamp;
+  /** Stamp of the last reading actually binned, so nothing is counted twice. */
+  const usedStamp = useRef<number | undefined>(undefined);
 
   // Compass runs whenever the screen is up, so the dial can orient itself even
   // before a direction scan is started.
@@ -67,6 +74,7 @@ export function useDirectionScan(rssi: number | null) {
     Magnetometer.setUpdateInterval(120);
     const sub = Magnetometer.addListener(({ x, y }) => {
       const deg = (((Math.atan2(y, x) * 180) / Math.PI) + 360) % 360;
+      headingRaw.current = deg;
       // Shortest-arc low pass, so it does not spin at the 0/360 seam.
       const d = angleDelta(deg, heading.current);
       heading.current = (heading.current + d * 0.2 + 360) % 360;
@@ -134,8 +142,25 @@ export function useDirectionScan(rssi: number | null) {
       const h = heading.current;
       if (sampling.current) {
         const r = latestRssi.current;
-        if (r !== null) {
-          const idx = Math.floor((((h % 360) + 360) % 360) / SECTOR_DEG) % SECTORS;
+        const s = latestStamp.current;
+        /*
+         * Only bin a reading once.
+         *
+         * This loop ticks every 200 ms but advertisements arrive every
+         * 100 ms to a second, and Classic inquiry only every twelve. Binning
+         * latestRssi unconditionally re-filed the same measurement under
+         * every heading swept through while it was current — smearing one
+         * strong reading across the compass and flattening the very peak the
+         * method depends on. Almost certainly a major reason the bearing was
+         * inaccurate in practice.
+         */
+        const fresh = s === undefined || s !== usedStamp.current;
+        if (r !== null && fresh) {
+          usedStamp.current = s;
+          // Raw heading, not the smoothed one: a filter lagging behind a turn
+          // files the reading under a sector you have already left.
+          const hb = headingRaw.current;
+          const idx = Math.floor((((hb % 360) + 360) % 360) / SECTOR_DEG) % SECTORS;
           const prev = best.current[idx];
           // Keep the best reading per sector. RSSI only ever drops from
           // obstruction, so the maximum is the closest thing to a clean sample.

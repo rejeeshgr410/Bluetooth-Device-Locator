@@ -79,14 +79,14 @@ export function SurveyScreen({
   const chrome = (
     <>
       <View style={styles.header}>
-        <Text style={styles.wordmark}>WARMER</Text>
+        <Text style={styles.wordmark}>DEVICE LOCATOR</Text>
         <Text style={type.eyebrow}>SIGNAL HUNT</Text>
       </View>
 
       {status === 'needsPermission' && (
         <View style={[styles.notice, { borderLeftColor: c.amber }]}>
           <Text style={[type.body, { color: c.text }]}>
-            Warmer needs Bluetooth permission before it can see anything — including whether your
+            DEVICE LOCATOR needs Bluetooth permission before it can see anything — including whether your
             Bluetooth is even switched on. Nothing is sent anywhere.
           </Text>
           <Pressable onPress={onRequestPermission} style={styles.noticeButton}>

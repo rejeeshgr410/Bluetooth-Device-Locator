@@ -7,7 +7,6 @@ import { Contact } from '../lib/useScanner';
 import { MotionPermission } from '../lib/useDeadReckoning';
 import { useClicker } from '../lib/useClicker';
 import { useTrail } from '../lib/useTrail';
-import { ArrowLeft, Volume2, VolumeX, Vibrate, RefreshCw, MapPin, Footprints, ArrowUp, ArrowDown, ArrowLeft as ArrowL, ArrowRight, Compass } from 'lucide-react';
 
 /** iOS has no Vibration API at all, so the toggle must not claim otherwise. */
 const HAPTICS_SUPPORTED = typeof navigator !== 'undefined' && 'vibrate' in navigator;
@@ -91,7 +90,7 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
             letterSpacing: '1.5px',
           }}
         >
-          <ArrowLeft size={16} /> ALL SIGNALS
+          <span style={{ fontFamily: "var(--font-mono)" }}>&lt;</span> ALL SIGNALS
         </button>
         <span
           style={{
@@ -144,7 +143,7 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
             letterSpacing: '-4px',
             lineHeight: 1,
             color: stale ? 'var(--c-amber-dim)' : 'var(--c-amber)',
-            transition: 'color 300ms ease-out',
+            
           }}
         >
           {live === null ? '––' : live.toFixed(0)}
@@ -210,7 +209,7 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
               padding: '18px',
               backgroundColor: 'var(--c-ink-raised)',
               borderRadius: '4px',
-              borderLeft: '3px solid var(--c-amber)',
+              
               display: 'flex',
               flexDirection: 'column',
               gap: '8px',
@@ -264,7 +263,7 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
           onClick={() => setSound((v) => !v)}
           style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--c-text)', fontSize: '14px' }}
         >
-          {sound ? <Volume2 size={18} color="var(--c-amber)" /> : <VolumeX size={18} color="var(--c-muted)" />}
+          {sound ? <span style={{ fontFamily: "var(--font-mono)" }}>[VOL ON]</span> : <span style={{ fontFamily: "var(--font-mono)" }}>[VOL OFF]</span>}
           <span>Clicks ({sound ? 'ON' : 'OFF'})</span>
         </button>
 
@@ -281,7 +280,7 @@ export const HuntScreen: React.FC<HuntScreenProps> = ({
             opacity: HAPTICS_SUPPORTED ? 1 : 0.45,
           }}
         >
-          <Vibrate size={18} color={haptics && HAPTICS_SUPPORTED ? 'var(--c-amber)' : 'var(--c-muted)'} />
+          <span style={{ fontFamily: "var(--font-mono)" }}>[VIBE]</span>
           <span>
             Vibration ({!HAPTICS_SUPPORTED ? 'UNSUPPORTED' : haptics ? 'ON' : 'OFF'})
           </span>
@@ -343,7 +342,7 @@ const TrailPanel: React.FC<TrailPanelProps> = ({ trail, live, isSimulator, onSim
               gap: '8px',
             }}
           >
-            <Compass size={15} />
+            <span style={{ fontFamily: "var(--font-mono)" }}>[COMPASS]</span>
             {motionState === 'prompt' ? 'MOTION ACCESS NEEDED' : 'TRAIL UNAVAILABLE'}
           </div>
           <div style={{ fontSize: '13px', color: 'var(--c-dim)', marginTop: '8px', lineHeight: 1.5 }}>
@@ -386,7 +385,7 @@ const TrailPanel: React.FC<TrailPanelProps> = ({ trail, live, isSimulator, onSim
           padding: '18px',
           backgroundColor: 'var(--c-ink-raised)',
           borderRadius: '4px',
-          borderLeft: '3px solid var(--c-amber)',
+          
           display: 'flex',
           flexDirection: 'column',
           gap: '8px',
@@ -424,17 +423,17 @@ const TrailPanel: React.FC<TrailPanelProps> = ({ trail, live, isSimulator, onSim
       {isSimulator && (
         <div style={{ marginTop: '14px', padding: '12px', backgroundColor: 'rgba(99, 230, 226, 0.05)', borderRadius: '4px', border: '1px dashed var(--c-warm)' }}>
           <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '1.5px', color: 'var(--c-warm)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Footprints size={14} /> VIRTUAL STEP WALKER (DESKTOP / SIMULATOR)
+            <span style={{ fontFamily: "var(--font-mono)" }}>[STEPS]</span> VIRTUAL STEP WALKER (DESKTOP / SIMULATOR)
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', maxWidth: '180px', margin: '0 auto' }}>
             <div />
-            <button onClick={() => onSimWalk(0, 0.72, 0)} style={simBtnStyle} title="Step North"><ArrowUp size={14} /></button>
+            <button onClick={() => onSimWalk(0, 0.72, 0)} style={simBtnStyle} title="Step North"><span style={{ fontFamily: "var(--font-mono)" }}>^</span></button>
             <div />
-            <button onClick={() => onSimWalk(-0.72, 0, 270)} style={simBtnStyle} title="Step West"><ArrowL size={14} /></button>
+            <button onClick={() => onSimWalk(-0.72, 0, 270)} style={simBtnStyle} title="Step West"><span style={{ fontFamily: "var(--font-mono)" }}>&lt;</span></button>
             <button onClick={() => onSimWalk(0, 0, undefined)} style={{ ...simBtnStyle, backgroundColor: 'var(--c-warm)', color: 'var(--c-ink)' }} title="Step Forward">STEP</button>
-            <button onClick={() => onSimWalk(0.72, 0, 90)} style={simBtnStyle} title="Step East"><ArrowRight size={14} /></button>
+            <button onClick={() => onSimWalk(0.72, 0, 90)} style={simBtnStyle} title="Step East"><span style={{ fontFamily: "var(--font-mono)" }}>&gt;</span></button>
             <div />
-            <button onClick={() => onSimWalk(0, -0.72, 180)} style={simBtnStyle} title="Step South"><ArrowDown size={14} /></button>
+            <button onClick={() => onSimWalk(0, -0.72, 180)} style={simBtnStyle} title="Step South"><span style={{ fontFamily: "var(--font-mono)" }}>v</span></button>
             <div />
           </div>
         </div>
@@ -462,7 +461,7 @@ const TrailPanel: React.FC<TrailPanelProps> = ({ trail, live, isSimulator, onSim
             gap: '6px',
           }}
         >
-          <MapPin size={14} /> DROP A MARK HERE
+          <span style={{ fontFamily: "var(--font-mono)" }}>[PIN]</span> DROP A MARK HERE
         </button>
 
         <button
@@ -483,7 +482,7 @@ const TrailPanel: React.FC<TrailPanelProps> = ({ trail, live, isSimulator, onSim
             gap: '6px',
           }}
         >
-          <RefreshCw size={14} /> RESET
+          <span style={{ fontFamily: "var(--font-mono)" }}>[RESET]</span> RESET
         </button>
       </div>
     </>

@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fill, kindOf, STALE_AFTER_MS } from '../lib/signal';
 import { Capability, Contact, ScanMode } from '../lib/useScanner';
-import { Radio, Search, SlidersHorizontal, AlertTriangle, Cpu, Info, Bluetooth } from 'lucide-react';
 
 interface SurveyScreenProps {
   contacts: Record<string, Contact>;
@@ -31,7 +30,7 @@ const IDLE_COPY: Record<ScanMode, string> = {
   single:
     'This browser can track one device at a time. Tap CHOOSE A DEVICE, pick your target from the browser’s list, and its signal will be tracked from there.',
   unsupported:
-    'This browser cannot follow a signal as it changes, so there is nothing for WARMER to read. Switch on the simulator to see how the app works.',
+    'This browser cannot follow a signal as it changes, so there is nothing to read. Switch on the simulator to see how the app works.',
   simulator:
     'Simulator mode. Tap START SIMULATION to walk through the app against five invented devices — no radio is involved and no reading is real.',
 };
@@ -80,19 +79,11 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '24px', maxWidth: '640px', margin: '0 auto', width: '100%' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '26px', fontWeight: 800, letterSpacing: '6px', color: 'var(--c-text)' }}>
-          WARMER
+        <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--c-text)' }}>
+          Bluetooth Device Locator
         </h1>
-        <span style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '2.5px', color: 'var(--c-muted)' }}>
-          SIGNAL HUNT
-        </span>
       </div>
 
-      {/*
-        Simulator banner. Persistent and unmissable whenever readings are
-        fabricated — the old build only said so in the empty state, which
-        vanished the moment invented devices filled the list.
-      */}
       {mode === 'simulator' && (
         <div
           style={{
@@ -106,7 +97,7 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             gap: '12px',
           }}
         >
-          <Cpu size={18} color="var(--c-warm)" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--c-warm)', marginTop: '2px' }}>[SIM]</div>
           <div>
             <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '2px', color: 'var(--c-warm)' }}>
               SIMULATED — NOT REAL DEVICES
@@ -120,17 +111,11 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
         </div>
       )}
 
-      {/*
-        Capability banner. Exactly one shows, and it reflects what was detected
-        before any chooser appeared — the previous build stacked an optimistic
-        "pick a device" banner on top of an error saying that could not work.
-      */}
       {mode === 'unsupported' && (
         <div
           style={{
             padding: '16px',
             backgroundColor: 'var(--c-ink-raised)',
-            borderLeft: '3px solid var(--c-alarm)',
             marginBottom: '16px',
             borderRadius: '4px',
             display: 'flex',
@@ -138,13 +123,13 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             gap: '12px',
           }}
         >
-          <AlertTriangle size={18} color="var(--c-alarm)" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--c-alarm)', marginTop: '2px' }}>[!]</div>
           <div style={{ fontSize: '13px', color: 'var(--c-dim)', lineHeight: 1.6 }}>
             <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '2px', color: 'var(--c-alarm)', marginBottom: '6px' }}>
               SIGNAL TRACKING UNAVAILABLE
             </div>
             This browser can see Bluetooth devices but cannot follow how strong their signal is —
-            which is the one thing WARMER needs. That is a browser limitation, not a fault in your
+            which is the one thing this app needs. That is a browser limitation, not a fault in your
             phone or your Bluetooth.
             <div style={{ marginTop: '10px' }}>
               To enable it in Chrome or Edge, switch on{' '}
@@ -165,13 +150,11 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
         </div>
       )}
 
-      {/* Single-device: RSSI is readable, but only for one chosen device. */}
       {mode === 'single' && (
         <div
           style={{
             padding: '14px 16px',
             backgroundColor: 'var(--c-ink-raised)',
-            borderLeft: '3px solid var(--c-amber)',
             marginBottom: '16px',
             borderRadius: '4px',
             display: 'flex',
@@ -179,7 +162,7 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             gap: '12px',
           }}
         >
-          <Bluetooth size={18} color="var(--c-amber)" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--c-amber)', marginTop: '2px' }}>[BT]</div>
           <div style={{ fontSize: '13px', color: 'var(--c-dim)', lineHeight: 1.5 }}>
             <strong style={{ color: 'var(--c-text)' }}>One device at a time.</strong> This browser will
             not list everything in range — only the device you pick from its own chooser. A full sweep
@@ -199,13 +182,11 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
         </div>
       )}
 
-      {/* Error banner */}
       {error && (
         <div
           style={{
             padding: '14px 16px',
             backgroundColor: 'var(--c-ink-raised)',
-            borderLeft: '3px solid var(--c-alarm)',
             marginBottom: '16px',
             borderRadius: '4px',
             display: 'flex',
@@ -213,18 +194,16 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             gap: '12px',
           }}
         >
-          <AlertTriangle size={18} color="var(--c-alarm)" style={{ flexShrink: 0 }} />
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--c-alarm)' }}>[!]</div>
           <span style={{ fontSize: '14px', color: 'var(--c-text)' }}>{error}</span>
         </div>
       )}
 
-      {/* Notice banner — expected outcomes, not failures */}
       {notice && (
         <div
           style={{
             padding: '14px 16px',
             backgroundColor: 'var(--c-ink-raised)',
-            borderLeft: '3px solid var(--c-muted)',
             marginBottom: '16px',
             borderRadius: '4px',
             display: 'flex',
@@ -232,7 +211,7 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             gap: '12px',
           }}
         >
-          <Info size={18} color="var(--c-muted)" style={{ flexShrink: 0 }} />
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--c-muted)' }}>[i]</div>
           <span style={{ fontSize: '14px', color: 'var(--c-dim)' }}>{notice}</span>
         </div>
       )}
@@ -261,12 +240,11 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
-            transition: 'all 150ms ease-out',
             minWidth: '160px',
             opacity: mode === 'unsupported' ? 0.55 : 1,
           }}
         >
-          <Radio size={16} />
+          <span style={{ fontFamily: 'var(--font-mono)' }}>(o)</span>
           {scanning ? 'STOP LISTENING' : START_LABEL[mode]}
         </button>
 
@@ -288,7 +266,7 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             gap: '6px',
           }}
         >
-          <SlidersHorizontal size={14} />
+          <span style={{ fontFamily: 'var(--font-mono)' }}>=</span>
           {namedOnly ? 'NAMED ONLY' : 'ALL SIGNALS'}
         </button>
 
@@ -317,18 +295,14 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
             cursor: capability.bluetooth ? 'pointer' : 'not-allowed',
           }}
         >
-          <Cpu size={14} />
+          <span style={{ fontFamily: 'var(--font-mono)' }}>[SIM]</span>
           {isSimulator ? 'SIMULATOR ON' : 'SIMULATOR OFF'}
         </button>
       </div>
 
       {/* Filter Input */}
       <div style={{ position: 'relative', marginBottom: '16px' }}>
-        <Search
-          size={16}
-          color="var(--c-dim)"
-          style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }}
-        />
+        <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "var(--c-dim)", fontFamily: "var(--font-mono)" }}>Q</span>
         <input
           type="text"
           value={filter}
@@ -382,10 +356,10 @@ export const SurveyScreen: React.FC<SurveyScreenProps> = ({
                   border: '1px solid var(--c-hairline)',
                   gap: '16px',
                   textAlign: 'left',
-                  transition: 'all 120ms ease-out',
+                  
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--c-amber)')}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--c-hairline)')}
+                
+                
               >
                 {/* RSSI Bar */}
                 <div

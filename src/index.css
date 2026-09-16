@@ -20,7 +20,7 @@
   --c-alarm: #FF5A47;
 
   --font-mono: 'JetBrains Mono', Menlo, monospace;
-  --font-sans: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  --font-sans: system-ui, -apple-system, sans-serif;
 }
 
 * {

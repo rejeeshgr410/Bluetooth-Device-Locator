@@ -3,4 +3,9 @@ dist
 .vercel
 *.log
 *.apk
+*.aab
+*.idsig
 signing/
+android/
+android-twa/
+clean*.cjs

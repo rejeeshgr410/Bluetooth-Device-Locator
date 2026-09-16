@@ -56,8 +56,13 @@ function wantedPermissions(): Permission[] {
     ? [
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
       ]
-    : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+    : [
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
+      ];
 }
 
 /** Check without prompting, so launching the app does not throw up a dialog. */

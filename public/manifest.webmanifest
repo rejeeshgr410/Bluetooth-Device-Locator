@@ -1,6 +1,6 @@
 {
-  "name": "WARMER — Signal Hunt",
-  "short_name": "WARMER",
+  "name": "Bluetooth Device Locator",
+  "short_name": "Device Locator",
   "description": "Turns Bluetooth signal strength into a warmer/colder trail so you can walk down a lost device.",
   "start_url": "/",
   "scope": "/",

@@ -4,255 +4,536 @@ import { useClicker } from '../lib/useClicker';
 import { useTrail } from '../lib/useTrail';
 import { Trend, Proximity, Confidence, SignalStats, SearchMode } from '../lib/signal';
 import { Tape } from '../components/Tape';
+import { ThemeMode } from '../lib/theme';
 
 type Props = {
   contact: Contact;
   onBack: () => void;
   searchMode: SearchMode;
   onSearchModeChange: (m: SearchMode) => void;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
 };
 
-export const HuntScreen: React.FC<Props> = ({ contact, onBack, searchMode, onSearchModeChange }) => {
-  const { stats, name, kind } = contact;
-  const [expertMode, setExpertMode] = useState(false);
+export const HuntScreen: React.FC<Props> = ({
+  contact,
+  onBack,
+  searchMode,
+  onSearchModeChange,
+  theme,
+  onToggleTheme,
+}) => {
+  const { stats, name, kind, id } = contact;
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [hapticsEnabled, setHapticsEnabled] = useState(true);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
-  // Audio/Haptic clicker
+  // Audio / Haptic feedback engine
   useClicker({
     rssi: stats.filtered,
-    active: !stats.isStale,
-    sound: true, // TODO: toggle in UI
-    haptics: true,
+    active: !stats.isStale && (audioEnabled || hapticsEnabled),
+    sound: audioEnabled,
+    haptics: hapticsEnabled,
     trend: stats.trend,
     confidence: stats.confidence,
   });
 
+  // Dead reckoning sensors (steps + compass orientation)
   const { quality, fix, requestAccess, permission, calibrateStride, stride } = useTrail({
     rssi: stats.isStale ? null : stats.filtered,
     active: true,
-    stride: 0.75, // Default initial stride
+    stride: 0.75,
   });
 
-  // Prompt for permissions automatically if needed on mount
   useEffect(() => {
     if (permission === 'prompt') requestAccess();
   }, [permission, requestAccess]);
 
-  const getAssistantMessage = (stats: SignalStats) => {
-    if (stats.isStale) return 'Signal lost. Return toward the last strong signal.';
-    
-    if (stats.proximity === 'VERY CLOSE') {
-      if (stats.confidence === 'LOW') return "You're probably very close. Move slowly.";
-      return 'Move slowly. Try rotating the phone. Check underneath nearby objects.';
+  const getAssistantGuidance = (stats: SignalStats) => {
+    if (stats.isStale) {
+      return 'Signal interrupted. Return toward your last known strong location.';
     }
 
-    if (stats.trend === 'GETTING WARMER') return "You're moving closer. Keep going.";
-    if (stats.trend === 'GETTING COLDER') return "Try turning around.";
-    if (stats.trend === 'STABLE') return "Move a little and compare the signal.";
-    
-    return 'Walk around to establish a trend.';
+    if (stats.proximity === 'VERY CLOSE') {
+      return '🎯 Target is in arm\'s reach! Check under cushions, in pockets, or behind objects.';
+    }
+
+    if (stats.trend === 'GETTING WARMER') {
+      return '🔥 Getting warmer! You are moving in the right direction. Keep walking.';
+    }
+
+    if (stats.trend === 'GETTING COLDER') {
+      return '❄️ Getting colder! You are moving away. Turn around and try another direction.';
+    }
+
+    if (stats.trend === 'STABLE') {
+      return '🧭 Signal is steady. Walk a few steps in different directions to determine the path.';
+    }
+
+    return 'Walk slowly around the room to establish signal direction.';
   };
 
-  const getTrendArrow = (trend: Trend) => {
-    if (trend === 'GETTING WARMER') return '↑ WARMER';
-    if (trend === 'GETTING COLDER') return '↓ COLDER';
-    if (trend === 'STABLE') return '→ STABLE';
-    return '? UNCERTAIN';
+  const getSignalColor = (rssi: number) => {
+    if (rssi >= -55) return 'var(--c-success)';
+    if (rssi >= -70) return 'var(--c-primary)';
+    if (rssi >= -82) return 'var(--c-warning)';
+    return 'var(--c-danger)';
   };
 
-  const getConfidenceColor = (conf: Confidence) => {
-    if (conf === 'HIGH') return 'var(--c-warm)';
-    if (conf === 'MEDIUM') return 'var(--c-amber)';
-    return 'var(--c-alarm)';
-  };
+  const signalColor = getSignalColor(stats.filtered);
 
-  const MODES: { value: SearchMode; label: string }[] = [
-    { value: 'QUICK_SEARCH', label: 'QUICK' },
-    { value: 'ROOM_SWEEP', label: 'SWEEP' },
-    { value: 'FINAL_1_METER', label: 'FINAL' }
+  const MODES: { value: SearchMode; label: string; desc: string }[] = [
+    { value: 'QUICK_SEARCH', label: 'Quick Scout', desc: 'Fast reaction' },
+    { value: 'ROOM_SWEEP', label: 'Room Sweep', desc: 'Balanced & stable' },
+    { value: 'FINAL_1_METER', label: 'Precision', desc: 'Under 1 meter' },
   ];
 
   return (
-    <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column', height: '100%', minHeight: '100vh', backgroundColor: 'var(--c-ink)' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--c-bg)' }}>
+      {/* Top App Bar with Navigation */}
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          backgroundColor: 'var(--c-surface)',
+          borderBottom: '1px solid var(--c-border)',
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: 'var(--shadow-sm)',
+        }}
+      >
         <button
           onClick={onBack}
           style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--c-dim)',
-            padding: '8px 0',
-            fontSize: '11px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            backgroundColor: 'var(--c-surface-elevated)',
+            border: '1px solid var(--c-border)',
+            fontSize: '13px',
             fontWeight: 700,
-            letterSpacing: '2px',
-            cursor: 'pointer',
+            color: 'var(--c-text)',
           }}
         >
-          <span style={{ fontFamily: "var(--font-mono)", marginRight: '4px' }}>[X]</span> STOP
+          <span>←</span>
+          <span>Back to Devices</span>
         </button>
 
-        {/* Mode Selector */}
-        <div style={{ display: 'flex', background: 'var(--c-ink-raised)', borderRadius: '4px', padding: '2px' }}>
-          {MODES.map((m) => (
-            <button
-              key={m.value}
-              onClick={() => onSearchModeChange(m.value)}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Audio Clicker Toggle */}
+          <button
+            onClick={() => setAudioEnabled((v) => !v)}
+            title={audioEnabled ? 'Audio Clicker On' : 'Audio Clicker Muted'}
+            style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: '8px',
+              backgroundColor: audioEnabled ? 'var(--c-primary-light)' : 'var(--c-surface-elevated)',
+              border: `1px solid ${audioEnabled ? 'var(--c-primary)' : 'var(--c-border)'}`,
+              fontSize: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {audioEnabled ? '🔊' : '🔇'}
+          </button>
+
+          {/* Haptics Toggle */}
+          <button
+            onClick={() => setHapticsEnabled((v) => !v)}
+            title={hapticsEnabled ? 'Haptic Vibrations On' : 'Haptics Off'}
+            style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: '8px',
+              backgroundColor: hapticsEnabled ? 'var(--c-primary-light)' : 'var(--c-surface-elevated)',
+              border: `1px solid ${hapticsEnabled ? 'var(--c-primary)' : 'var(--c-border)'}`,
+              fontSize: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            📳
+          </button>
+
+          {/* Theme Toggle */}
+          <button
+            onClick={onToggleTheme}
+            title="Toggle Light/Dark Theme"
+            style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: '8px',
+              backgroundColor: 'var(--c-surface-elevated)',
+              border: '1px solid var(--c-border)',
+              fontSize: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {theme === 'light' ? '🌙' : '☀️'}
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main style={{ flex: 1, padding: '16px 20px', maxWidth: '720px', width: '100%', margin: '0 auto' }}>
+        {/* Target Header Card */}
+        <div
+          style={{
+            backgroundColor: 'var(--c-surface)',
+            border: '1px solid var(--c-border)',
+            borderRadius: '14px',
+            padding: '16px 18px',
+            marginBottom: '16px',
+            boxShadow: 'var(--shadow-sm)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--c-text)' }}>
+                {name}
+              </h2>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--c-text-muted)' }}>
+                {id}
+              </span>
+              <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>•</span>
+              <span style={{ fontSize: '12px', color: 'var(--c-text-muted)' }}>{kind}</span>
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: '6px 12px',
+              borderRadius: '20px',
+              fontSize: '11px',
+              fontWeight: 700,
+              backgroundColor: stats.isStale ? 'var(--c-danger-light)' : 'var(--c-success-light)',
+              color: stats.isStale ? 'var(--c-danger)' : 'var(--c-success)',
+              border: `1px solid ${stats.isStale ? 'var(--c-danger)' : 'var(--c-success)'}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span style={{ fontSize: '10px' }}>●</span>
+            {stats.isStale ? 'SIGNAL STALE' : 'LIVE TRACKING'}
+          </div>
+        </div>
+
+        {/* Search Mode Segmented Control */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr',
+            backgroundColor: 'var(--c-surface-elevated)',
+            border: '1px solid var(--c-border)',
+            borderRadius: '12px',
+            padding: '4px',
+            marginBottom: '16px',
+            gap: '4px',
+          }}
+        >
+          {MODES.map((m) => {
+            const active = searchMode === m.value;
+            return (
+              <button
+                key={m.value}
+                onClick={() => onSearchModeChange(m.value)}
+                style={{
+                  padding: '10px 4px',
+                  borderRadius: '8px',
+                  backgroundColor: active ? 'var(--c-surface)' : 'transparent',
+                  color: active ? 'var(--c-primary)' : 'var(--c-text-secondary)',
+                  fontWeight: active ? 700 : 500,
+                  fontSize: '12px',
+                  boxShadow: active ? 'var(--shadow-sm)' : 'none',
+                  transition: 'all 0.15s ease',
+                  textAlign: 'center',
+                }}
+              >
+                <div>{m.label}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Primary Proximity Radar Card */}
+        <div
+          style={{
+            backgroundColor: 'var(--c-surface)',
+            border: `2px solid ${stats.isStale ? 'var(--c-danger)' : signalColor}`,
+            borderRadius: '18px',
+            padding: '24px 20px',
+            boxShadow: 'var(--shadow-md)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            marginBottom: '16px',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Animated Radar Halo */}
+          <div
+            className={!stats.isStale ? 'pulse-anim' : ''}
+            style={{
+              width: '180px',
+              height: '180px',
+              borderRadius: '50%',
+              backgroundColor: signalColor,
+              opacity: 0.08,
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none',
+            }}
+          />
+
+          <div style={{ fontSize: '13px', fontWeight: 700, letterSpacing: '1px', color: 'var(--c-text-muted)', textTransform: 'uppercase' }}>
+            Current Proximity
+          </div>
+
+          <div
+            style={{
+              fontSize: '34px',
+              fontWeight: 900,
+              color: stats.isStale ? 'var(--c-danger)' : signalColor,
+              letterSpacing: '0.5px',
+              margin: '8px 0 4px',
+            }}
+          >
+            {stats.isStale ? 'SIGNAL INTERRUPTED' : stats.proximity}
+          </div>
+
+          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--c-text-secondary)', marginBottom: '16px' }}>
+            Estimated Range: {stats.approxDistance}
+          </div>
+
+          {/* Trend Indicator Banner */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 18px',
+              borderRadius: '30px',
+              backgroundColor:
+                stats.trend === 'GETTING WARMER'
+                  ? 'var(--c-success-light)'
+                  : stats.trend === 'GETTING COLDER'
+                  ? 'var(--c-danger-light)'
+                  : 'var(--c-surface-elevated)',
+              color:
+                stats.trend === 'GETTING WARMER'
+                  ? 'var(--c-success)'
+                  : stats.trend === 'GETTING COLDER'
+                  ? 'var(--c-danger)'
+                  : 'var(--c-text-secondary)',
+              fontSize: '14px',
+              fontWeight: 800,
+              letterSpacing: '0.5px',
+              marginBottom: '20px',
+              border: '1px solid var(--c-border)',
+            }}
+          >
+            <span>
+              {stats.trend === 'GETTING WARMER'
+                ? '🟢 ↑ GETTING WARMER'
+                : stats.trend === 'GETTING COLDER'
+                ? '🔴 ↓ GETTING COLDER'
+                : '🟡 → SIGNAL STEADY'}
+            </span>
+          </div>
+
+          {/* High Precision Signal Meter Bar */}
+          <div style={{ width: '100%', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--c-text-muted)', marginBottom: '6px', fontWeight: 600 }}>
+              <span>Weak (-95 dBm)</span>
+              <span>Strong (-35 dBm)</span>
+            </div>
+            <div
               style={{
-                background: searchMode === m.value ? 'var(--c-muted)' : 'none',
-                color: searchMode === m.value ? 'var(--c-ink)' : 'var(--c-dim)',
-                border: 'none',
-                padding: '6px 10px',
-                fontSize: '10px',
-                fontWeight: 700,
-                letterSpacing: '1px',
-                borderRadius: '2px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
+                width: '100%',
+                height: '14px',
+                backgroundColor: 'var(--c-surface-elevated)',
+                borderRadius: '7px',
+                overflow: 'hidden',
+                border: '1px solid var(--c-border)',
               }}
             >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Target Info */}
-      <div style={{ marginBottom: '24px' }}>
-        <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '2px', color: 'var(--c-dim)', marginBottom: '8px' }}>
-          TARGET DEVICE
-        </div>
-        <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--c-text)', wordBreak: 'break-word' }}>
-          {name ?? 'Unknown Device'}
-        </div>
-        <div style={{ fontSize: '12px', color: 'var(--c-muted)', marginTop: '4px' }}>
-          {kind}
-        </div>
-      </div>
-
-      {/* Primary Display */}
-      <div style={{ 
-        backgroundColor: 'var(--c-ink-raised)', 
-        padding: '24px', 
-        borderRadius: '8px',
-        border: `1px solid ${stats.isStale ? 'var(--c-alarm)' : 'var(--c-hairline)'}`,
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: '24px'
-      }}>
-        {stats.isStale ? (
-          <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--c-alarm)', letterSpacing: '2px' }}>
-            SIGNAL LOST
+              <div
+                style={{
+                  height: '100%',
+                  width: `${stats.percentage}%`,
+                  backgroundColor: signalColor,
+                  borderRadius: '7px',
+                  transition: 'width 200ms ease-out',
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--c-text)' }}>
+                Signal: {stats.percentage}%
+              </span>
+              <span style={{ fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 800, color: signalColor }}>
+                {Math.round(stats.filtered)} dBm
+              </span>
+            </div>
           </div>
-        ) : (
-          <>
-            <div style={{ fontSize: '32px', fontWeight: 700, color: stats.proximity === 'VERY CLOSE' ? 'var(--c-warm)' : 'var(--c-text)', letterSpacing: '2px' }}>
-              {stats.proximity}
-            </div>
 
-            {/* Tape Graph */}
-            <div style={{ width: '100%', marginBottom: '12px' }}>
-              <Tape history={stats.history} height={120} />
-            </div>
-
-            <div style={{ fontSize: '18px', fontWeight: 700, color: getConfidenceColor(stats.confidence) }}>
-              {getTrendArrow(stats.trend)}
-            </div>
-
-            <div style={{ fontSize: '12px', color: 'var(--c-muted)' }}>
-              Confidence: <span style={{ color: getConfidenceColor(stats.confidence), fontWeight: 700 }}>{stats.confidence}</span>
-            </div>
-            
-            <div style={{ 
-              marginTop: '16px', 
-              padding: '16px', 
-              backgroundColor: 'rgba(255, 255, 255, 0.05)', 
-              borderRadius: '8px',
-              textAlign: 'center',
+          {/* Contextual Smart Guidance Box */}
+          <div
+            style={{
+              width: '100%',
+              marginTop: '16px',
+              padding: '14px 16px',
+              borderRadius: '10px',
+              backgroundColor: 'var(--c-surface-elevated)',
+              border: '1px solid var(--c-border)',
+              fontSize: '13px',
+              color: 'var(--c-text)',
               lineHeight: 1.5,
-              fontSize: '14px',
-              color: 'var(--c-text)'
-            }}>
-              {getAssistantMessage(stats)}
-            </div>
-          </>
-        )}
-      </div>
+              fontWeight: 500,
+            }}
+          >
+            {getAssistantGuidance(stats)}
+          </div>
+        </div>
 
-      {/* Expert Mode Toggle */}
-      <button 
-        onClick={() => setExpertMode(!expertMode)}
-        style={{
-          marginTop: '24px',
-          padding: '12px',
-          background: 'none',
-          border: '1px solid var(--c-hairline)',
-          borderRadius: '4px',
-          color: 'var(--c-dim)',
-          fontSize: '11px',
-          fontWeight: 700,
-          letterSpacing: '2px',
-        }}
-      >
-        <span style={{ fontFamily: "var(--font-mono)" }}>[DEBUG]</span> EXPERT VIEW
-      </button>
+        {/* Live Signal History Tape Graph */}
+        <div
+          style={{
+            backgroundColor: 'var(--c-surface)',
+            border: '1px solid var(--c-border)',
+            borderRadius: '14px',
+            padding: '16px',
+            marginBottom: '16px',
+            boxShadow: 'var(--shadow-sm)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--c-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Live Signal Progression (10s)
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>
+              Peak: {Math.round(stats.peakRssi)} dBm
+            </span>
+          </div>
 
-      {/* Expert Panel */}
-      {expertMode && (
-        <div style={{ 
-          marginTop: '12px', 
-          padding: '16px', 
-          backgroundColor: 'var(--c-ink-raised)', 
-          borderRadius: '4px',
-          fontFamily: 'var(--font-mono)',
-          fontSize: '11px',
-          color: 'var(--c-dim)'
-        }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <div>ID: {contact.id.substring(0,8)}...</div>
-            <div>Raw: {stats.raw} dBm</div>
-            <div>Filtered: {Math.round(stats.filtered)} dBm</div>
-            <div>Median: {stats.median} dBm</div>
-            <div>Pkts/Sec: {stats.packetsPerSec.toFixed(1)}</div>
-            <div>Variance: {stats.variance.toFixed(1)}</div>
-            <div>Peak RSSI: {Math.round(stats.peakRssi)}</div>
-            <div>Age: {((Date.now() - stats.lastSeen) / 1000).toFixed(1)}s</div>
-            
-            <div style={{ gridColumn: '1 / -1', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--c-hairline)' }}>
-              DEAD RECKONING SENSORS
+          <Tape history={stats.history} height={120} />
+        </div>
+
+        {/* Collapsible Diagnostics & Dead Reckoning */}
+        <div
+          style={{
+            backgroundColor: 'var(--c-surface)',
+            border: '1px solid var(--c-border)',
+            borderRadius: '14px',
+            overflow: 'hidden',
+            boxShadow: 'var(--shadow-sm)',
+            marginBottom: '30px',
+          }}
+        >
+          <button
+            onClick={() => setShowDiagnostics((v) => !v)}
+            style={{
+              width: '100%',
+              padding: '14px 18px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: 'var(--c-surface-elevated)',
+              fontSize: '13px',
+              fontWeight: 700,
+              color: 'var(--c-text)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>⚙️</span>
+              <span>Sensors & Expert Diagnostics</span>
             </div>
-            <div>Quality: <span style={{ color: quality === 'GOOD' ? 'var(--c-warm)' : quality === 'LIMITED' ? 'var(--c-amber)' : 'var(--c-alarm)' }}>{quality}</span></div>
-            <div>Steps: {fix.steps}</div>
-            <div>Heading: {Math.round(fix.heading)}°</div>
-            <div>Stride: {stride.toFixed(2)}m</div>
-            
-            {quality !== 'UNAVAILABLE' && (
-              <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}>
-                <button 
+            <span>{showDiagnostics ? '▲ Hide' : '▼ View'}</span>
+          </button>
+
+          {showDiagnostics && (
+            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '12px' }}>
+              {/* Sensors Status */}
+              <div>
+                <div style={{ fontWeight: 700, color: 'var(--c-text-muted)', marginBottom: '8px' }}>
+                  MOTION & SENSOR STATUS
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div style={{ padding: '8px', backgroundColor: 'var(--c-surface-elevated)', borderRadius: '6px' }}>
+                    Quality:{' '}
+                    <strong style={{ color: quality === 'GOOD' ? 'var(--c-success)' : 'var(--c-warning)' }}>
+                      {quality}
+                    </strong>
+                  </div>
+                  <div style={{ padding: '8px', backgroundColor: 'var(--c-surface-elevated)', borderRadius: '6px' }}>
+                    Steps Counted: <strong>{fix.steps}</strong>
+                  </div>
+                  <div style={{ padding: '8px', backgroundColor: 'var(--c-surface-elevated)', borderRadius: '6px' }}>
+                    Compass Heading: <strong>{Math.round(fix.heading)}°</strong>
+                  </div>
+                  <div style={{ padding: '8px', backgroundColor: 'var(--c-surface-elevated)', borderRadius: '6px' }}>
+                    Stride: <strong>{stride.toFixed(2)} m</strong>
+                  </div>
+                </div>
+
+                <button
                   onClick={() => {
                     const walked = parseFloat(window.prompt('Enter exact meters walked in a straight line:') || '0');
                     if (walked > 0) calibrateStride(walked, fix.steps);
                   }}
                   style={{
+                    marginTop: '8px',
                     width: '100%',
                     padding: '8px',
-                    background: 'var(--c-ink)',
-                    border: '1px solid var(--c-amber)',
-                    color: 'var(--c-amber)',
-                    borderRadius: '4px',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '10px'
+                    borderRadius: '6px',
+                    backgroundColor: 'var(--c-surface-elevated)',
+                    border: '1px solid var(--c-border)',
+                    fontWeight: 600,
+                    color: 'var(--c-primary)',
                   }}
                 >
-                  CALIBRATE STRIDE
+                  Calibrate Stride Length
                 </button>
               </div>
-            )}
-          </div>
+
+              {/* Radio Stats */}
+              <div>
+                <div style={{ fontWeight: 700, color: 'var(--c-text-muted)', marginBottom: '8px' }}>
+                  RADIO METRICS
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontFamily: 'var(--font-mono)' }}>
+                  <div>Raw RSSI: {stats.raw} dBm</div>
+                  <div>Filtered: {Math.round(stats.filtered)} dBm</div>
+                  <div>Variance: {stats.variance.toFixed(1)}</div>
+                  <div>Rate: {stats.packetsPerSec.toFixed(1)} pkts/s</div>
+                  <div>Confidence: {stats.confidence}</div>
+                  <div>Last Packet: {((Date.now() - stats.lastSeen) / 1000).toFixed(1)}s ago</div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </main>
     </div>
   );
 };

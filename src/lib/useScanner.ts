@@ -1,60 +1,42 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { bluetoothService, BluetoothDeviceRaw } from './bluetoothService';
-import { SignalEngine, SignalStats, kindOf, STALE_AFTER_MS, LOST_AFTER_MS } from './signal';
-
-export type ScanMode = 'scan' | 'simulator' | 'unsupported';
+import { SignalEngine, SignalStats, SearchMode, STALE_AFTER_MS, LOST_AFTER_MS } from './signal';
 
 export type Contact = {
   id: string;
-  name: string | null;
+  name: string;
   kind: string;
-  simulated: boolean;
-  virtualPosition?: { x: number; y: number };
+  isGuessed: boolean;
   stats: SignalStats;
 };
-
-// Mock devices for Simulator
-const MOCK_DEVICES = [
-  { id: 'sim-1', name: 'AirPods Pro', baseRssi: -65, pos: { x: 3, y: 5 } },
-  { id: 'sim-2', name: 'Galaxy Watch', baseRssi: -72, pos: { x: -2, y: 8 } },
-];
 
 export function useScanner() {
   const [contacts, setContacts] = useState<Record<string, Contact>>({});
   const [scanning, setScanning] = useState(false);
-  const [isSimulator, setIsSimulator] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [searchMode, setSearchModeState] = useState<SearchMode>('ROOM_SWEEP');
 
   const engines = useRef<Record<string, SignalEngine>>({});
   const store = useRef<Record<string, Contact>>({});
   const dirty = useRef(false);
-
   const stopScanFn = useRef<(() => void) | null>(null);
-  const simInterval = useRef<number | null>(null);
-  const userSimPos = useRef({ x: 0, y: 0 });
 
-  const mode: ScanMode = useMemo(() => {
-    return isSimulator ? 'simulator' : 'scan';
-  }, [isSimulator]);
-  
-  const [searchMode, setSearchModeState] = useState<import('./signal').SearchMode>('ROOM_SWEEP');
-
-  const setSearchMode = useCallback((newMode: import('./signal').SearchMode) => {
+  const setSearchMode = useCallback((newMode: SearchMode) => {
     setSearchModeState(newMode);
-    Object.values(engines.current).forEach(engine => engine.setMode(newMode));
+    Object.values(engines.current).forEach((engine) => engine.setMode(newMode));
   }, []);
 
+  // Housekeeping loop for stale / lost markers
   useEffect(() => {
     const id = setInterval(() => {
       const now = Date.now();
       let hasChanges = false;
-      
-      // Mark stale/lost devices
+
       for (const key of Object.keys(store.current)) {
         const contact = store.current[key];
         const age = now - contact.stats.lastSeen;
-        
+
         if (age > LOST_AFTER_MS) {
           delete store.current[key];
           delete engines.current[key];
@@ -69,37 +51,39 @@ export function useScanner() {
         dirty.current = false;
         setContacts({ ...store.current });
       }
-    }, 200);
+    }, 250);
+
     return () => clearInterval(id);
   }, []);
 
-  const ingest = useCallback((device: BluetoothDeviceRaw, simulated: boolean, virtualPos?: {x: number, y: number}) => {
-    if (!engines.current[device.id]) {
-      const engine = new SignalEngine();
-      engine.setMode(searchMode);
-      engines.current[device.id] = engine;
-    }
-    
-    const engine = engines.current[device.id];
-    const stats = engine.ingest(device.rssi);
-    
-    store.current[device.id] = {
-      id: device.id,
-      name: device.name,
-      kind: kindOf(device.name),
-      simulated,
-      virtualPosition: virtualPos,
-      stats,
-    };
-    
-    dirty.current = true;
-  }, [searchMode]);
+  const ingest = useCallback(
+    (device: BluetoothDeviceRaw) => {
+      if (!engines.current[device.id]) {
+        const engine = new SignalEngine();
+        engine.setMode(searchMode);
+        engines.current[device.id] = engine;
+      }
 
-  const clearStore = useCallback(() => {
-    store.current = {};
-    engines.current = {};
-    dirty.current = true;
-  }, []);
+      const engine = engines.current[device.id];
+      const stats = engine.ingest(device.rssi);
+
+      // Preserve previously better name if current one is guessed
+      const existing = store.current[device.id];
+      const bestName = existing && !existing.isGuessed ? existing.name : device.name;
+      const bestKind = existing && existing.kind !== 'Bluetooth Device' ? existing.kind : device.kind;
+
+      store.current[device.id] = {
+        id: device.id,
+        name: bestName,
+        kind: bestKind,
+        isGuessed: existing ? existing.isGuessed && device.isGuessed : device.isGuessed,
+        stats,
+      };
+
+      dirty.current = true;
+    },
+    [searchMode]
+  );
 
   const teardownRadio = useCallback(() => {
     if (stopScanFn.current) {
@@ -108,97 +92,55 @@ export function useScanner() {
     }
   }, []);
 
-  // Simulator loop
-  useEffect(() => {
-    if (!scanning || !isSimulator) {
-      if (simInterval.current !== null) {
-        clearInterval(simInterval.current);
-        simInterval.current = null;
-      }
-      return;
-    }
-
-    simInterval.current = window.setInterval(() => {
-      MOCK_DEVICES.forEach((mock) => {
-        const dx = mock.pos.x - userSimPos.current.x;
-        const dy = mock.pos.y - userSimPos.current.y;
-        const dist = Math.max(0.2, Math.hypot(dx, dy));
-
-        // Simulated noise and path loss
-        const noise = (Math.random() - 0.5) * 4.0;
-        const calcRssi = Math.round(mock.baseRssi - 10 * 2.4 * Math.log10(dist) + noise);
-        const rawRssi = Math.max(-95, Math.min(-35, calcRssi));
-
-        ingest({ id: mock.id, name: mock.name, rssi: rawRssi }, true, mock.pos);
-      });
-    }, 350);
-
-    return () => {
-      if (simInterval.current !== null) {
-        clearInterval(simInterval.current);
-        simInterval.current = null;
-      }
-    };
-  }, [scanning, isSimulator, ingest]);
-
   useEffect(() => teardownRadio, [teardownRadio]);
 
   const start = useCallback(async () => {
     setError(null);
     setNotice(null);
 
-    if (mode === 'simulator') {
-      setScanning(true);
-      return;
-    }
-
     try {
+      const { locationOk, bluetoothOk } = await bluetoothService.checkPrerequisites();
+      if (!bluetoothOk) {
+        setError('Bluetooth is turned off. Please enable Bluetooth to locate devices.');
+        return;
+      }
+      if (!locationOk) {
+        setNotice('Notice: Android Location Services are turned off. Enabling Location in phone Settings allows detecting more BLE beacons.');
+      }
+
       stopScanFn.current = await bluetoothService.startScan((device) => {
-        ingest(device, false);
+        ingest(device);
       });
       setScanning(true);
     } catch (err: any) {
       teardownRadio();
       setScanning(false);
-      setError(err.message ?? 'Could not start Bluetooth scan.');
+      setError(err.message ?? 'Failed to start Bluetooth scan.');
     }
-  }, [mode, ingest, teardownRadio]);
+  }, [ingest, teardownRadio]);
 
   const stop = useCallback(() => {
     teardownRadio();
-    clearStore();
     setScanning(false);
-    setNotice(null);
-  }, [teardownRadio, clearStore]);
+    // Note: We DO NOT wipe discovered contacts on stop, allowing user to inspect them!
+  }, [teardownRadio]);
 
-  const toggleSimulator = useCallback(() => {
-    teardownRadio();
-    clearStore();
-    setScanning(false);
-    setError(null);
-    setNotice(null);
-    setIsSimulator((v) => !v);
-  }, [teardownRadio, clearStore]);
-
-  const moveUserSimPosition = useCallback((dx: number, dy: number) => {
-    userSimPos.current = {
-      x: userSimPos.current.x + dx,
-      y: userSimPos.current.y + dy,
-    };
+  const clear = useCallback(() => {
+    store.current = {};
+    engines.current = {};
+    dirty.current = false;
+    setContacts({});
   }, []);
 
   return {
     contacts,
     scanning,
-    isSimulator,
-    mode,
     searchMode,
     error,
     notice,
     start,
     stop,
-    toggleSimulator,
-    moveUserSimPosition,
+    clear,
     setSearchMode,
   };
 }

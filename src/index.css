@@ -1,26 +1,66 @@
 :root {
-  --c-ink: #070B10;
-  --c-ink-raised: #0E141C;
+  /* Light Mode (Default) */
+  --c-bg: #F8FAFC;
+  --c-surface: #FFFFFF;
+  --c-surface-elevated: #F1F5F9;
+  --c-surface-hover: #E2E8F0;
+  --c-border: #E2E8F0;
+  --c-border-subtle: #EDF2F7;
+  --c-hairline: #CBD5E1;
 
-  /* Borders and rules ONLY. Never use this as a text colour: against
-     --c-ink-raised it measures 1.18:1, which is not rendered so much as
-     implied. Small print belongs on --c-dim. */
-  --c-hairline: #1B242F;
+  --c-text: #0F172A;
+  --c-text-secondary: #475569;
+  --c-text-muted: #64748B;
+  --c-text-inverse: #FFFFFF;
 
-  --c-amber: #FFB000;
-  /* Dimmed amber for the stale readout. 3.68:1 on --c-ink — still obviously
-     "signal lost", but legible, which is exactly when it has to be. */
-  --c-amber-dim: #8A6410;
-  --c-warm: #63E6E2;
-  --c-cold: #5B6B7C;
-  --c-text: #E8EDF2;
-  --c-muted: #7C8B9A;
-  /* Small labels and secondary copy. 6.35:1 on --c-ink-raised. */
-  --c-dim: #8A99A8;
-  --c-alarm: #FF5A47;
+  --c-primary: #2563EB;
+  --c-primary-hover: #1D4ED8;
+  --c-primary-light: #EFF6FF;
 
-  --font-mono: 'JetBrains Mono', Menlo, monospace;
-  --font-sans: system-ui, -apple-system, sans-serif;
+  --c-success: #059669;
+  --c-success-light: #ECFDF5;
+  --c-warning: #D97706;
+  --c-warning-light: #FFFBEB;
+  --c-danger: #DC2626;
+  --c-danger-light: #FEF2F2;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+[data-theme="dark"] {
+  /* Dark Mode */
+  --c-bg: #0B0F17;
+  --c-surface: #141C28;
+  --c-surface-elevated: #1D2838;
+  --c-surface-hover: #26354A;
+  --c-border: #233144;
+  --c-border-subtle: #192433;
+  --c-hairline: #32435B;
+
+  --c-text: #F8FAFC;
+  --c-text-secondary: #CBD5E1;
+  --c-text-muted: #94A3B8;
+  --c-text-inverse: #0B0F17;
+
+  --c-primary: #3B82F6;
+  --c-primary-hover: #60A5FA;
+  --c-primary-light: rgba(59, 130, 246, 0.15);
+
+  --c-success: #10B981;
+  --c-success-light: rgba(16, 185, 129, 0.15);
+  --c-warning: #F59E0B;
+  --c-warning-light: rgba(245, 158, 11, 0.15);
+  --c-danger: #EF4444;
+  --c-danger-light: rgba(239, 68, 68, 0.15);
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -31,13 +71,14 @@
 }
 
 html, body {
-  background-color: var(--c-ink);
+  background-color: var(--c-bg);
   color: var(--c-text);
   font-family: var(--font-sans);
   min-height: 100vh;
   width: 100%;
   overflow-x: hidden;
   line-height: 1.5;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 #root {
@@ -46,76 +87,81 @@ html, body {
   flex-direction: column;
 }
 
-/* Base Utility Classes */
-.font-mono {
-  font-family: var(--font-mono);
-}
-
-.font-sans {
-  font-family: var(--font-sans);
-}
-
-.text-amber { color: var(--c-amber); }
-.text-amber-dim { color: var(--c-amber-dim); }
-.text-warm { color: var(--c-warm); }
-.text-cold { color: var(--c-cold); }
-.text-muted { color: var(--c-muted); }
-.text-dim { color: var(--c-dim); }
-.text-alarm { color: var(--c-alarm); }
-
-/* Buttons & Inputs */
 button {
   cursor: pointer;
   border: none;
   background: none;
   font-family: inherit;
+  font-size: inherit;
+  color: inherit;
 }
 
 input {
   font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  border: none;
+  outline: none;
 }
 
-button:disabled {
-  cursor: not-allowed;
-}
-
-/* Keyboard focus must be visible. The previous build set outline:none on
-   inputs and replaced it with nothing, leaving keyboard users with no way
-   to tell where they were. */
 :focus-visible {
-  outline: 2px solid var(--c-amber);
+  outline: 2px solid var(--c-primary);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
-/* Pointer users keep the clean look; only keyboard focus draws the ring. */
 :focus:not(:focus-visible) {
   outline: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+/* Animations */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.8;
   }
 }
 
-/* Custom Scrollbar for sleek dark look */
+@keyframes radar-sweep {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.radar-sweep-anim {
+  animation: radar-sweep 3s linear infinite;
+}
+
+.pulse-anim {
+  animation: pulse-ring 2s ease-in-out infinite;
+}
+
+/* Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--c-ink);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--c-hairline);
+  background: var(--c-border);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--c-muted);
+  background: var(--c-text-muted);
 }

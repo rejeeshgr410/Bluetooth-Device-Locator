@@ -1,281 +1,521 @@
-import React, { useMemo, useState } from 'react';
-import { Contact, ScanMode } from '../lib/useScanner';
+import React, { useState, useMemo } from 'react';
+import { Contact } from '../lib/useScanner';
+import { ThemeMode } from '../lib/theme';
 
-export type SurveyScreenProps = {
+type Props = {
   contacts: Record<string, Contact>;
   scanning: boolean;
-  isSimulator: boolean;
-  mode: ScanMode;
   error: string | null;
   notice: string | null;
+  theme: ThemeMode;
+  onToggleTheme: () => void;
   onStart: () => void;
   onStop: () => void;
-  onToggleSimulator: () => void;
+  onClear: () => void;
   onPick: (contact: Contact) => void;
 };
 
-const START_LABEL: Record<ScanMode, string> = {
-  scan: 'START SCAN',
-  simulator: 'START SIMULATOR',
-  unsupported: 'UNSUPPORTED',
-};
-
-const IDLE_COPY: Record<ScanMode, string> = {
-  scan: 'Ready to scan for nearby devices. The list will update as packets arrive.',
-  simulator: 'Simulator is active. Start listening to hear the simulated beacons.',
-  unsupported: 'Bluetooth is not supported in this environment.',
-};
-
-const LISTENING_COPY: Record<ScanMode, string> = {
-  scan: 'Listening for Bluetooth advertisements. Keep the device nearby.',
-  simulator: 'Listening for simulated beacons.',
-  unsupported: 'Unsupported.',
-};
-
-export const SurveyScreen: React.FC<SurveyScreenProps> = ({
+export const SurveyScreen: React.FC<Props> = ({
   contacts,
   scanning,
-  isSimulator,
-  mode,
   error,
   notice,
+  theme,
+  onToggleTheme,
   onStart,
   onStop,
-  onToggleSimulator,
+  onClear,
   onPick,
 }) => {
   const [filter, setFilter] = useState('');
-  const [namedOnly, setNamedOnly] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
 
   const rows = useMemo(() => {
     let arr = Object.values(contacts);
-    
-    if (namedOnly) {
-      arr = arr.filter((c) => c.name);
-    }
+
     if (filter.trim()) {
-      const q = filter.toLowerCase().trim();
+      const q = filter.toLowerCase();
       arr = arr.filter(
-        (c) =>
-          (c.name ?? '').toLowerCase().includes(q) ||
-          (c.id ?? '').toLowerCase().includes(q),
+        (d) => d.name.toLowerCase().includes(q) || d.id.toLowerCase().includes(q)
       );
     }
-    
+
+    if (selectedCategory !== 'ALL') {
+      arr = arr.filter((d) => {
+        if (selectedCategory === 'AUDIO') return d.kind === 'Earbuds' || d.kind === 'Audio';
+        if (selectedCategory === 'WEARABLE') return d.kind === 'Watch' || d.kind === 'Phone';
+        if (selectedCategory === 'TRACKER') return d.kind === 'Tracker';
+        return d.kind === 'Bluetooth Device' || d.kind === 'Laptop' || d.kind === 'Tablet';
+      });
+    }
+
+    // Sort by signal strength (strongest first)
     return arr.sort((a, b) => b.stats.filtered - a.stats.filtered);
-  }, [contacts, namedOnly, filter]);
+  }, [contacts, filter, selectedCategory]);
+
+  const categories = [
+    { id: 'ALL', label: 'All Devices' },
+    { id: 'AUDIO', label: 'Earbuds & Audio' },
+    { id: 'WEARABLE', label: 'Watches & Phones' },
+    { id: 'TRACKER', label: 'Tags & Trackers' },
+    { id: 'OTHER', label: 'Other BLE' },
+  ];
+
+  const getKindIcon = (kind: string) => {
+    switch (kind) {
+      case 'Earbuds':
+        return '🎧';
+      case 'Audio':
+        return '🔊';
+      case 'Watch':
+        return '⌚';
+      case 'Phone':
+        return '📱';
+      case 'Tablet':
+        return '📟';
+      case 'Laptop':
+        return '💻';
+      case 'Tracker':
+        return '🏷️';
+      default:
+        return '📶';
+    }
+  };
+
+  const getSignalColor = (rssi: number) => {
+    if (rssi >= -55) return 'var(--c-success)';
+    if (rssi >= -70) return 'var(--c-primary)';
+    if (rssi >= -82) return 'var(--c-warning)';
+    return 'var(--c-danger)';
+  };
 
   return (
-    <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Messages */}
-      {(error || notice) && (
-        <div style={{ marginBottom: '16px' }}>
-          {error && (
-            <div style={{ padding: '12px', backgroundColor: 'var(--c-ink-raised)', borderRadius: '4px', borderLeft: '3px solid var(--c-alarm)', fontSize: '13px', color: 'var(--c-alarm)' }}>
-              {error}
-            </div>
-          )}
-          {notice && !error && (
-            <div style={{ padding: '12px', backgroundColor: 'var(--c-ink-raised)', borderRadius: '4px', borderLeft: '3px solid var(--c-amber)', fontSize: '13px', color: 'var(--c-amber)' }}>
-              {notice}
-            </div>
-          )}
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', backgroundColor: 'var(--c-bg)' }}>
+      {/* Top App Bar */}
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          backgroundColor: 'var(--c-surface)',
+          borderBottom: '1px solid var(--c-border)',
+          padding: '16px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: 'var(--shadow-sm)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div
+            style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '10px',
+              backgroundColor: 'var(--c-primary-light)',
+              color: 'var(--c-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '20px',
+            }}
+          >
+            📡
+          </div>
+          <div>
+            <h1 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--c-text)', lineHeight: 1.2 }}>
+              Bluetooth Locator
+            </h1>
+            <p style={{ fontSize: '12px', color: 'var(--c-text-muted)', marginTop: '2px' }}>
+              {scanning ? 'Live Radar Scanning Active' : 'Radar Scanner Ready'}
+            </p>
+          </div>
         </div>
-      )}
 
-      {/* Controls */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        {/* Theme Toggle Button */}
         <button
-          onClick={scanning ? onStop : onStart}
-          disabled={mode === 'unsupported'}
+          onClick={onToggleTheme}
+          title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}
+          aria-label="Toggle Theme"
           style={{
-            flex: 2,
-            padding: '14px 20px',
-            borderRadius: '4px',
-            border: `1px solid ${mode === 'unsupported' ? 'var(--c-hairline)' : 'var(--c-amber)'}`,
-            backgroundColor: scanning ? 'var(--c-amber)' : 'transparent',
-            color: scanning ? 'var(--c-ink)' : mode === 'unsupported' ? 'var(--c-dim)' : 'var(--c-amber)',
-            fontWeight: 700,
-            letterSpacing: '2px',
-            fontSize: '13px',
+            width: '42px',
+            height: '42px',
+            borderRadius: '10px',
+            backgroundColor: 'var(--c-surface-elevated)',
+            border: '1px solid var(--c-border)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '8px',
-            minWidth: '160px',
-            opacity: mode === 'unsupported' ? 0.55 : 1,
+            fontSize: '18px',
+            boxShadow: 'var(--shadow-sm)',
+            transition: 'background-color 0.2s',
           }}
         >
-          <span style={{ fontFamily: 'var(--font-mono)' }}>(o)</span>
-          {scanning ? 'STOP LISTENING' : START_LABEL[mode]}
+          {theme === 'light' ? '🌙' : '☀️'}
         </button>
+      </header>
 
-        <button
-          onClick={() => setNamedOnly((v) => !v)}
-          style={{
-            flex: 1,
-            padding: '12px 14px',
-            borderRadius: '4px',
-            border: '1px solid var(--c-hairline)',
-            backgroundColor: 'var(--c-ink-raised)',
-            color: namedOnly ? 'var(--c-dim)' : 'var(--c-amber)',
-            fontSize: '10px',
-            fontWeight: 700,
-            letterSpacing: '1.5px',
-          }}
-        >
-          {namedOnly ? 'NAMED ONLY' : 'ALL SIGNALS'}
-        </button>
-
-        <button
-          onClick={onToggleSimulator}
-          style={{
-            padding: '12px 14px',
-            borderRadius: '4px',
-            border: `1px solid ${isSimulator ? 'var(--c-warm)' : 'var(--c-hairline)'}`,
-            backgroundColor: isSimulator ? 'rgba(99, 230, 226, 0.1)' : 'var(--c-ink-raised)',
-            color: isSimulator ? 'var(--c-warm)' : 'var(--c-dim)',
-            fontSize: '10px',
-            fontWeight: 700,
-            letterSpacing: '1.5px',
-          }}
-        >
-          {isSimulator ? 'SIM ON' : 'SIM OFF'}
-        </button>
-      </div>
-
-      {/* Filter Input */}
-      <div style={{ position: 'relative', marginBottom: '16px' }}>
-        <input
-          type="text"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter by device name or address..."
-          style={{
-            width: '100%',
-            backgroundColor: 'var(--c-ink-raised)',
-            color: 'var(--c-text)',
-            borderRadius: '4px',
-            padding: '12px 14px',
-            border: '1px solid var(--c-hairline)',
-            fontSize: '14px',
-          }}
-        />
-      </div>
-
-      {/* Device List */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {rows.length === 0 ? (
+      {/* Main Content Area */}
+      <main style={{ flex: 1, padding: '16px 20px', maxWidth: '800px', width: '100%', margin: '0 auto' }}>
+        {/* Error / Notice Banners */}
+        {error && (
           <div
             style={{
-              padding: '32px 16px',
-              textAlign: 'center',
-              backgroundColor: 'var(--c-ink-raised)',
-              borderRadius: '4px',
-              border: '1px dashed var(--c-hairline)',
-              marginTop: '12px',
+              marginBottom: '16px',
+              padding: '12px 16px',
+              backgroundColor: 'var(--c-danger-light)',
+              borderRadius: '8px',
+              border: '1px solid var(--c-danger)',
+              fontSize: '13px',
+              color: 'var(--c-danger)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
             }}
           >
-            <p style={{ color: 'var(--c-dim)', fontSize: '14px', lineHeight: '1.6' }}>
-              {scanning ? LISTENING_COPY[mode] : IDLE_COPY[mode]}
-            </p>
+            <span>⚠️</span>
+            <span>{error}</span>
           </div>
-        ) : (
-          rows.map((item) => {
-            const stale = item.stats.isStale;
-            const fillWidth = Math.max(0, Math.min(100, (item.stats.filtered + 95) * 1.8));
+        )}
 
-            return (
+        {notice && !error && (
+          <div
+            style={{
+              marginBottom: '16px',
+              padding: '12px 16px',
+              backgroundColor: 'var(--c-warning-light)',
+              borderRadius: '8px',
+              border: '1px solid var(--c-warning)',
+              fontSize: '13px',
+              color: 'var(--c-warning)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <span>ℹ️</span>
+            <span>{notice}</span>
+          </div>
+        )}
+
+        {/* Primary Scan Action Card */}
+        <div
+          style={{
+            backgroundColor: 'var(--c-surface)',
+            border: '1px solid var(--c-border)',
+            borderRadius: '14px',
+            padding: '18px 20px',
+            marginBottom: '18px',
+            boxShadow: 'var(--shadow-sm)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--c-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Nearby Devices
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--c-text)', marginTop: '2px' }}>
+                {Object.keys(contacts).length} Discovered
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {Object.keys(contacts).length > 0 && !scanning && (
+                <button
+                  onClick={onClear}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--c-surface-elevated)',
+                    border: '1px solid var(--c-border)',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--c-text-secondary)',
+                  }}
+                >
+                  Clear List
+                </button>
+              )}
+
               <button
-                key={item.id}
-                onClick={() => onPick(item)}
+                onClick={scanning ? onStop : onStart}
                 style={{
+                  padding: '10px 22px',
+                  borderRadius: '10px',
+                  backgroundColor: scanning ? 'var(--c-danger)' : 'var(--c-primary)',
+                  color: '#FFFFFF',
+                  fontSize: '14px',
+                  fontWeight: 700,
                   display: 'flex',
                   alignItems: 'center',
-                  padding: '16px',
-                  backgroundColor: 'var(--c-ink-raised)',
-                  borderRadius: '4px',
-                  border: '1px solid var(--c-hairline)',
-                  gap: '16px',
-                  textAlign: 'left',
+                  gap: '8px',
+                  boxShadow: 'var(--shadow-md)',
+                  transition: 'transform 0.1s ease',
                 }}
               >
-                {/* RSSI Bar */}
-                <div
+                <span className={scanning ? 'pulse-anim' : ''}>{scanning ? '⏹' : '▶'}</span>
+                {scanning ? 'Stop Scanning' : 'Start Radar'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Search and Category Filter */}
+        <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {/* Search Input */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              backgroundColor: 'var(--c-surface)',
+              border: '1px solid var(--c-border)',
+              borderRadius: '10px',
+              padding: '10px 14px',
+              gap: '10px',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            <span style={{ fontSize: '16px', color: 'var(--c-text-muted)' }}>🔍</span>
+            <input
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Search by device name, brand, or MAC address..."
+              style={{
+                flex: 1,
+                backgroundColor: 'transparent',
+                fontSize: '14px',
+                color: 'var(--c-text)',
+              }}
+            />
+            {filter && (
+              <button
+                onClick={() => setFilter('')}
+                style={{
+                  fontSize: '14px',
+                  color: 'var(--c-text-muted)',
+                  padding: '2px 6px',
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--c-surface-elevated)',
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Category Chips */}
+          <div
+            style={{
+              display: 'flex',
+              gap: '8px',
+              overflowX: 'auto',
+              paddingBottom: '4px',
+            }}
+          >
+            {categories.map((c) => {
+              const active = selectedCategory === c.id;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedCategory(c.id)}
                   style={{
-                    width: '46px',
-                    height: '4px',
-                    backgroundColor: 'var(--c-hairline)',
-                    borderRadius: '2px',
-                    overflow: 'hidden',
-                    flexShrink: 0,
+                    padding: '7px 14px',
+                    borderRadius: '20px',
+                    fontSize: '12px',
+                    fontWeight: active ? 700 : 500,
+                    whiteSpace: 'nowrap',
+                    backgroundColor: active ? 'var(--c-primary)' : 'var(--c-surface)',
+                    color: active ? '#FFFFFF' : 'var(--c-text-secondary)',
+                    border: `1px solid ${active ? 'var(--c-primary)' : 'var(--c-border)'}`,
+                    boxShadow: 'var(--shadow-sm)',
+                    transition: 'all 0.15s ease',
                   }}
                 >
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Device List */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '30px' }}>
+          {rows.length === 0 ? (
+            <div
+              style={{
+                padding: '48px 24px',
+                textAlign: 'center',
+                backgroundColor: 'var(--c-surface)',
+                borderRadius: '14px',
+                border: '1px dashed var(--c-border)',
+                marginTop: '12px',
+              }}
+            >
+              <div style={{ fontSize: '36px', marginBottom: '12px' }}>{scanning ? '📡' : '🔍'}</div>
+              <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--c-text)', marginBottom: '6px' }}>
+                {scanning ? 'Listening for Bluetooth signals...' : 'No Devices in View'}
+              </h3>
+              <p style={{ color: 'var(--c-text-muted)', fontSize: '13px', maxWidth: '340px', margin: '0 auto', lineHeight: 1.5 }}>
+                {scanning
+                  ? 'Keep your phone steady or walk slowly. Nearby Bluetooth devices, headphones, and trackers will appear automatically.'
+                  : 'Tap "Start Radar" to scan the room for all broadcasting Bluetooth devices.'}
+              </p>
+            </div>
+          ) : (
+            rows.map((item) => {
+              const stale = item.stats.isStale;
+              const signalColor = getSignalColor(item.stats.filtered);
+
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => onPick(item)}
+                  role="button"
+                  tabIndex={0}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '16px 18px',
+                    backgroundColor: 'var(--c-surface)',
+                    borderRadius: '12px',
+                    border: '1px solid var(--c-border)',
+                    gap: '14px',
+                    boxShadow: 'var(--shadow-sm)',
+                    cursor: 'pointer',
+                    transition: 'transform 0.1s ease, box-shadow 0.15s ease',
+                    opacity: stale ? 0.6 : 1,
+                  }}
+                >
+                  {/* Category Icon */}
                   <div
                     style={{
-                      height: '100%',
-                      width: `${fillWidth}%`,
-                      backgroundColor: item.simulated ? 'var(--c-warm)' : 'var(--c-amber)',
-                      opacity: stale ? 0.25 : 1,
-                      transition: 'width 200ms ease-out',
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '12px',
+                      backgroundColor: 'var(--c-surface-elevated)',
+                      border: '1px solid var(--c-border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '22px',
+                      flexShrink: 0,
                     }}
-                  />
-                </div>
+                  >
+                    {getKindIcon(item.kind)}
+                  </div>
 
-                {/* Device Details */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span
-                      style={{
-                        fontSize: '16px',
-                        fontWeight: 600,
-                        color: 'var(--c-text)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {item.name ?? 'Unnamed Device'}
-                    </span>
-                    {item.simulated && (
+                  {/* Device Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <span
                         style={{
-                          fontSize: '9px',
+                          fontSize: '15px',
                           fontWeight: 700,
-                          letterSpacing: '1.5px',
-                          color: 'var(--c-warm)',
-                          border: '1px solid var(--c-warm)',
-                          borderRadius: '3px',
-                          padding: '1px 5px',
-                          flexShrink: 0,
+                          color: 'var(--c-text)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: '220px',
                         }}
                       >
-                        SIM
+                        {item.name}
                       </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--c-dim)', marginTop: '2px', letterSpacing: '0.4px' }}>
-                    {item.kind} · {item.stats.packetsPerSec.toFixed(1)} pkts/s {stale ? ' · quiet' : ''}
-                  </div>
-                </div>
 
-                {/* RSSI Mono Value */}
-                <div
-                  style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '18px',
-                    fontWeight: 700,
-                    color: stale ? 'var(--c-amber-dim)' : item.simulated ? 'var(--c-warm)' : 'var(--c-amber)',
-                    flexShrink: 0,
-                  }}
-                >
-                  {item.stats.filtered.toFixed(0)} <span style={{ fontSize: '11px', color: 'var(--c-dim)' }}>dBm</span>
+                      {item.isGuessed && (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            color: 'var(--c-text-muted)',
+                            backgroundColor: 'var(--c-surface-elevated)',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            border: '1px solid var(--c-border)',
+                          }}
+                        >
+                          Auto-Identified
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
+                        {item.id}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>•</span>
+                      <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>
+                        {item.kind}
+                      </span>
+                    </div>
+
+                    {/* Proximity / Distance estimate */}
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: signalColor, marginTop: '4px' }}>
+                      {item.stats.proximity} ({item.stats.approxDistance})
+                    </div>
+                  </div>
+
+                  {/* Signal Strength Badge */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-end',
+                      gap: '4px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        color: signalColor,
+                      }}
+                    >
+                      {Math.round(item.stats.filtered)}{' '}
+                      <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--c-text-muted)' }}>dBm</span>
+                    </div>
+
+                    {/* Mini Signal Meter Bar */}
+                    <div
+                      style={{
+                        width: '56px',
+                        height: '6px',
+                        backgroundColor: 'var(--c-surface-elevated)',
+                        borderRadius: '3px',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: '100%',
+                          width: `${item.stats.percentage}%`,
+                          backgroundColor: signalColor,
+                          borderRadius: '3px',
+                          transition: 'width 250ms ease-out',
+                        }}
+                      />
+                    </div>
+
+                    <span style={{ fontSize: '10px', color: 'var(--c-text-muted)' }}>
+                      {item.stats.percentage}%
+                    </span>
+                  </div>
+
+                  {/* Navigation Arrow */}
+                  <div style={{ fontSize: '18px', color: 'var(--c-text-muted)', paddingLeft: '4px' }}>
+                    ›
+                  </div>
                 </div>
-              </button>
-            );
-          })
-        )}
-      </div>
+              );
+            })
+          )}
+        </div>
+      </main>
     </div>
   );
 };

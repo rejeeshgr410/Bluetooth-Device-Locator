@@ -1,7 +1,7 @@
-export const STALE_AFTER_MS = 5000;
-export const LOST_AFTER_MS = 15000;
+export const STALE_AFTER_MS = 6000;
+export const LOST_AFTER_MS = 25000;
 
-export type Proximity = 'VERY CLOSE' | 'NEARBY' | 'FAR' | 'VERY FAR' | 'UNKNOWN';
+export type Proximity = 'VERY CLOSE' | 'NEARBY' | 'MID RANGE' | 'FAR' | 'UNKNOWN';
 export type Trend = 'GETTING WARMER' | 'GETTING COLDER' | 'STABLE' | 'UNCERTAIN';
 export type Confidence = 'HIGH' | 'MEDIUM' | 'LOW';
 export type SearchMode = 'QUICK_SEARCH' | 'ROOM_SWEEP' | 'FINAL_1_METER';
@@ -9,7 +9,9 @@ export type SearchMode = 'QUICK_SEARCH' | 'ROOM_SWEEP' | 'FINAL_1_METER';
 export type SignalStats = {
   raw: number;
   filtered: number;
-  median: number;
+  velocity: number; // dBm per second (rate of approach)
+  percentage: number; // 0 to 100%
+  approxDistance: string; // Human readable distance estimation
   variance: number;
   packetsPerSec: number;
   trend: Trend;
@@ -18,29 +20,89 @@ export type SignalStats = {
   peakRssi: number;
   lastSeen: number;
   isStale: boolean;
-  history: (number | null)[]; // For the Tape graph
+  history: (number | null)[];
 };
 
-// Configurable windows (in milliseconds)
-const WINDOWS = {
-  QUICK_SEARCH: { short: 1000, medium: 3000 },
-  ROOM_SWEEP: { short: 1000, medium: 5000 },
-  FINAL_1_METER: { short: 500, medium: 2000 }
-};
+/**
+ * 1D Alpha-Beta tracking filter for high-accuracy RSSI smoothing and velocity estimation.
+ * Solves the classical BLE multipath lag problem.
+ */
+class AlphaBetaFilter {
+  private x = 0; // Estimated RSSI
+  private v = 0; // Estimated velocity (dBm/s)
+  private initialized = false;
+  private lastTs = 0;
+
+  constructor(
+    private alpha = 0.45,
+    private beta = 0.15
+  ) {}
+
+  public setTuning(alpha: number, beta: number) {
+    this.alpha = alpha;
+    this.beta = beta;
+  }
+
+  public update(measurement: number, ts: number): { x: number; v: number } {
+    if (!this.initialized) {
+      this.x = measurement;
+      this.v = 0;
+      this.lastTs = ts;
+      this.initialized = true;
+      return { x: this.x, v: this.v };
+    }
+
+    const dt = Math.max(0.05, Math.min(2.0, (ts - this.lastTs) / 1000));
+    this.lastTs = ts;
+
+    // 1. Predict
+    const xPred = this.x + this.v * dt;
+    const vPred = this.v;
+
+    // 2. Residual
+    const residual = measurement - xPred;
+
+    // 3. Update
+    this.x = xPred + this.alpha * residual;
+    this.v = vPred + (this.beta / dt) * residual;
+
+    // Damp velocity to prevent runaway drift
+    this.v *= 0.85;
+
+    return { x: this.x, v: this.v };
+  }
+
+  public getEstimate() {
+    return { x: this.x, v: this.v };
+  }
+}
 
 export class SignalEngine {
   private rawSamples: { rssi: number; ts: number }[] = [];
   private filteredSamples: { rssi: number; ts: number }[] = [];
-  private currentEma: number | null = null;
-  private peakRssi: number = -100;
+  private filter: AlphaBetaFilter;
+  private peakRssi = -100;
   private packetsSinceLastUpdate = 0;
   private lastUpdateTs = 0;
   private mode: SearchMode = 'ROOM_SWEEP';
 
-  constructor(private outlierThreshold = 15) {}
+  constructor() {
+    this.filter = new AlphaBetaFilter(0.4, 0.12);
+  }
 
   public setMode(mode: SearchMode) {
     this.mode = mode;
+    switch (mode) {
+      case 'QUICK_SEARCH':
+        this.filter.setTuning(0.65, 0.25); // Fast tracking
+        break;
+      case 'ROOM_SWEEP':
+        this.filter.setTuning(0.38, 0.10); // High stability, low jitter
+        break;
+      case 'FINAL_1_METER':
+        this.filter.setTuning(0.80, 0.35); // Ultra-responsive for close range
+        break;
+    }
   }
 
   public ingest(rawRssi: number): SignalStats {
@@ -48,104 +110,106 @@ export class SignalEngine {
     this.rawSamples.push({ rssi: rawRssi, ts: now });
     this.packetsSinceLastUpdate++;
 
-    // Prune old samples (> 10s)
-    const cutoff = now - 10000;
+    // Prune samples older than 12 seconds
+    const cutoff = now - 12000;
     this.rawSamples = this.rawSamples.filter((s) => s.ts > cutoff);
     this.filteredSamples = this.filteredSamples.filter((s) => s.ts > cutoff);
 
-    // 1. Outlier Rejection (Median Filter on short window)
-    const recentSamples = this.rawSamples.slice(-5);
-    const medianRssi = this.calculateMedian(recentSamples.map((s) => s.rssi));
-    
-    let acceptedRssi = rawRssi;
-    if (this.currentEma !== null && Math.abs(rawRssi - this.currentEma) > this.outlierThreshold) {
-      // Reject extreme jumps, use median instead
-      acceptedRssi = medianRssi;
+    // Median filter over last 3 samples to reject isolated multipath reflection spikes
+    const recentRaw = this.rawSamples.slice(-3);
+    const medianRssi = this.calculateMedian(recentRaw.map((s) => s.rssi));
+
+    // Blend: if single outlier differs by > 18 dBm from median, reject spike
+    const measurement = Math.abs(rawRssi - medianRssi) > 18 ? medianRssi : rawRssi;
+
+    // Apply tracking filter
+    const { x: filteredRssi, v: velocity } = this.filter.update(measurement, now);
+    this.filteredSamples.push({ rssi: filteredRssi, ts: now });
+
+    // Track Peak
+    if (filteredRssi > this.peakRssi) {
+      this.peakRssi = filteredRssi;
     }
 
-    // 2. Adaptive Smoothing (EMA)
-    let alpha = 0.3;
-    const variance = this.calculateVariance(recentSamples.map(s => s.rssi));
-    if (variance > 25) {
-      alpha = 0.1; // Highly noisy, smooth aggressively
-    } else if (variance < 5) {
-      alpha = 0.5; // Stable, respond faster
-    }
-    
-    // In final meter, we want faster response
-    if (this.mode === 'FINAL_1_METER') alpha = Math.max(0.4, alpha);
-
-    if (this.currentEma === null) {
-      this.currentEma = acceptedRssi;
-    } else {
-      this.currentEma = this.currentEma + alpha * (acceptedRssi - this.currentEma);
-    }
-
-    this.filteredSamples.push({ rssi: this.currentEma, ts: now });
-
-    // Track Peaks
-    if (this.currentEma > this.peakRssi && variance < 15) {
-      this.peakRssi = this.currentEma;
-    }
-
-    // Rate calculation
-    let pps = 0;
+    // Packet rate calculation
+    let pps = 1;
     if (now - this.lastUpdateTs >= 1000) {
-      pps = this.packetsSinceLastUpdate / ((now - this.lastUpdateTs) / 1000);
+      pps = this.packetsSinceLastUpdate / Math.max(1, (now - this.lastUpdateTs) / 1000);
       this.lastUpdateTs = now;
       this.packetsSinceLastUpdate = 0;
     }
 
-    return this.calculateStats(now, rawRssi, medianRssi, variance, pps);
+    const variance = this.calculateVariance(this.rawSamples.slice(-8).map((s) => s.rssi));
+
+    return this.calculateStats(now, rawRssi, filteredRssi, velocity, variance, pps);
   }
 
-  private calculateStats(now: number, raw: number, median: number, variance: number, pps: number): SignalStats {
-    const config = WINDOWS[this.mode];
-    const shortWindow = this.filteredSamples.filter(s => s.ts >= now - config.short);
-    const mediumWindow = this.filteredSamples.filter(s => s.ts >= now - config.medium);
-
-    // Proximity
+  private calculateStats(
+    now: number,
+    raw: number,
+    filtered: number,
+    velocity: number,
+    variance: number,
+    pps: number
+  ): SignalStats {
+    // Proximity Category & Realistic Distance Range
     let proximity: Proximity = 'UNKNOWN';
-    if (this.currentEma! >= -55) proximity = 'VERY CLOSE';
-    else if (this.currentEma! >= -70) proximity = 'NEARBY';
-    else if (this.currentEma! >= -85) proximity = 'FAR';
-    else proximity = 'VERY FAR';
+    let approxDistance = 'Calculating...';
 
-    // Trend
-    let trend: Trend = 'UNCERTAIN';
-    if (mediumWindow.length > 5) {
-      const olderHalf = mediumWindow.slice(0, Math.floor(mediumWindow.length / 2));
-      const recentHalf = mediumWindow.slice(Math.floor(mediumWindow.length / 2));
-      
-      const oldMean = olderHalf.reduce((acc, s) => acc + s.rssi, 0) / olderHalf.length;
-      const recentMean = recentHalf.reduce((acc, s) => acc + s.rssi, 0) / recentHalf.length;
-      
-      const delta = recentMean - oldMean;
-      
-      if (delta > 1.5) trend = 'GETTING WARMER';
-      else if (delta < -1.5) trend = 'GETTING COLDER';
-      else if (Math.abs(delta) <= 1.5) trend = 'STABLE';
+    if (filtered >= -52) {
+      proximity = 'VERY CLOSE';
+      approxDistance = '< 0.5 m (Arm\'s Reach)';
+    } else if (filtered >= -67) {
+      proximity = 'NEARBY';
+      approxDistance = '0.5 – 2 m';
+    } else if (filtered >= -80) {
+      proximity = 'MID RANGE';
+      approxDistance = '2 – 5 m';
+    } else {
+      proximity = 'FAR';
+      approxDistance = '> 5 m';
     }
 
-    // Confidence
+    // Calibrated percentage (0% at -95 dBm, 100% at -35 dBm)
+    const percentage = Math.max(0, Math.min(100, Math.round(((filtered + 95) / 60) * 100)));
+
+    // Accurate Velocity-based Trend
+    let trend: Trend = 'UNCERTAIN';
+    if (this.filteredSamples.length >= 3) {
+      if (velocity >= 0.45) {
+        trend = 'GETTING WARMER';
+      } else if (velocity <= -0.45) {
+        trend = 'GETTING COLDER';
+      } else {
+        trend = 'STABLE';
+      }
+    }
+
+    // Confidence assessment
     let confidence: Confidence = 'MEDIUM';
-    if (variance < 10 && mediumWindow.length > 10) confidence = 'HIGH';
-    else if (variance > 40 || mediumWindow.length < 3) confidence = 'LOW';
-    
-    // Generate 60 points of history for the Tape graph based on the last 10 seconds
+    if (variance < 15 && this.filteredSamples.length >= 5) {
+      confidence = 'HIGH';
+    } else if (variance > 45 || this.filteredSamples.length < 3) {
+      confidence = 'LOW';
+    }
+
+    // Generate 60 discrete slots of recent history for the Tape graph
     const history = Array.from({ length: 60 }).map((_, i) => {
-      const ts = now - (60 - i) * (10000 / 60);
-      // Find nearest sample
-      const nearest = this.filteredSamples.reduce((prev, curr) => 
-        Math.abs(curr.ts - ts) < Math.abs(prev.ts - ts) ? curr : prev
-      , { rssi: -100, ts: 0 });
-      return Math.abs(nearest.ts - ts) < 1000 ? nearest.rssi : null;
+      const targetTs = now - (60 - i) * 166; // 10s divided into 60 bins
+      // Find nearest sample within 1.5s
+      const nearest = this.filteredSamples.reduce(
+        (prev, curr) => (Math.abs(curr.ts - targetTs) < Math.abs(prev.ts - targetTs) ? curr : prev),
+        { rssi: -100, ts: 0 }
+      );
+      return Math.abs(nearest.ts - targetTs) < 1500 ? nearest.rssi : null;
     });
 
     return {
       raw,
-      filtered: this.currentEma!,
-      median,
+      filtered,
+      velocity,
+      percentage,
+      approxDistance,
       variance,
       packetsPerSec: pps,
       trend,
@@ -166,21 +230,8 @@ export class SignalEngine {
   }
 
   private calculateVariance(values: number[]): number {
-    if (values.length === 0) return 0;
+    if (values.length <= 1) return 0;
     const mean = values.reduce((a, b) => a + b, 0) / values.length;
     return values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
   }
-}
-
-export function kindOf(name: string | null): string {
-  const n = (name ?? '').toLowerCase();
-  if (!n) return 'Unknown';
-  if (/airpod|buds|headphone|wh-|wf-|beats/.test(n)) return 'Earbuds';
-  if (/watch|band|fit|garmin/.test(n)) return 'Watch';
-  if (/iphone|galaxy|pixel|redmi|oneplus|phone/.test(n)) return 'Phone';
-  if (/ipad|tab\b/.test(n)) return 'Tablet';
-  if (/macbook|laptop|thinkpad/.test(n)) return 'Laptop';
-  if (/tile|airtag|tracker|smarttag/.test(n)) return 'Tracker';
-  if (/tv|speaker|soundbar|jbl|bose/.test(n)) return 'Audio';
-  return 'Device';
 }

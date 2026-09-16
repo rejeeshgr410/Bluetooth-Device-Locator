@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Contact } from '../lib/useScanner';
 import { useClicker } from '../lib/useClicker';
+import { useTrail } from '../lib/useTrail';
 import { Trend, Proximity, Confidence, SignalStats } from '../lib/signal';
 
 type Props = {
@@ -21,6 +22,17 @@ export const HuntScreen: React.FC<Props> = ({ contact, onBack }) => {
     trend: stats.trend,
     confidence: stats.confidence,
   });
+
+  const { quality, fix, requestAccess, permission, calibrateStride, stride } = useTrail({
+    rssi: stats.isStale ? null : stats.filtered,
+    active: true,
+    stride: 0.75, // Default initial stride
+  });
+
+  // Prompt for permissions automatically if needed on mount
+  useEffect(() => {
+    if (permission === 'prompt') requestAccess();
+  }, [permission, requestAccess]);
 
   const getAssistantMessage = (stats: SignalStats) => {
     if (stats.isStale) return 'Signal lost. Return toward the last strong signal.';
@@ -179,6 +191,37 @@ export const HuntScreen: React.FC<Props> = ({ contact, onBack }) => {
             <div>Variance: {stats.variance.toFixed(1)}</div>
             <div>Peak RSSI: {Math.round(stats.peakRssi)}</div>
             <div>Age: {((Date.now() - stats.lastSeen) / 1000).toFixed(1)}s</div>
+            
+            <div style={{ gridColumn: '1 / -1', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--c-hairline)' }}>
+              DEAD RECKONING SENSORS
+            </div>
+            <div>Quality: <span style={{ color: quality === 'GOOD' ? 'var(--c-warm)' : quality === 'LIMITED' ? 'var(--c-amber)' : 'var(--c-alarm)' }}>{quality}</span></div>
+            <div>Steps: {fix.steps}</div>
+            <div>Heading: {Math.round(fix.heading)}°</div>
+            <div>Stride: {stride.toFixed(2)}m</div>
+            
+            {quality !== 'UNAVAILABLE' && (
+              <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}>
+                <button 
+                  onClick={() => {
+                    const walked = parseFloat(window.prompt('Enter exact meters walked in a straight line:') || '0');
+                    if (walked > 0) calibrateStride(walked, fix.steps);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    background: 'var(--c-ink)',
+                    border: '1px solid var(--c-amber)',
+                    color: 'var(--c-amber)',
+                    borderRadius: '4px',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '10px'
+                  }}
+                >
+                  CALIBRATE STRIDE
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -6,9 +6,9 @@ const SAMPLE_MS = 400;
 const TRACK_LIMIT = 400;
 
 export function useTrail(opts: { rssi: number | null; active: boolean; stride?: number }) {
-  const { rssi, active, stride } = opts;
-  const { fix, permission, receiving, requestAccess, reset: resetFix, simulateStep, setHeading } =
-    useDeadReckoning({ active, stride });
+  const { rssi, active, stride: initialStride } = opts;
+  const { fix, permission, quality, stride, requestAccess, reset: resetFix, simulateStep, setHeading, calibrateStride } =
+    useDeadReckoning({ active, initialStride });
 
   const [crumbs, setCrumbs] = useState<Crumb[]>([]);
   const [track, setTrack] = useState<{ x: number; y: number }[]>([]);
@@ -61,7 +61,9 @@ export function useTrail(opts: { rssi: number | null; active: boolean; stride?: 
   return {
     fix,
     permission,
-    receiving,
+    quality,
+    stride,
+    calibrateStride,
     requestAccess,
     crumbs,
     track,

@@ -1,82 +1,155 @@
-/**
- * Signal maths. This is the port of findphone's core idea:
- * one smoothed RSSI number, read as a trend rather than a distance.
- */
-
 export const STALE_AFTER_MS = 5000;
+export const LOST_AFTER_MS = 15000;
 
-/** Exponential moving average. Alpha is per-packet, not per-second. */
-export function ema(previous: number | null, sample: number, alpha = 0.28): number {
-  if (previous === null || Number.isNaN(previous)) return sample;
-  return previous + alpha * (sample - previous);
-}
+export type Proximity = 'VERY CLOSE' | 'NEARBY' | 'FAR' | 'VERY FAR' | 'UNKNOWN';
+export type Trend = 'GETTING WARMER' | 'GETTING COLDER' | 'STABLE' | 'UNCERTAIN';
+export type Confidence = 'HIGH' | 'MEDIUM' | 'LOW';
 
-export function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-export type Band = {
-  key: 'reach' | 'table' | 'room' | 'far' | 'veryFar';
-  label: string;
-  hint: string;
+export type SignalStats = {
+  raw: number;
+  filtered: number;
+  median: number;
+  variance: number;
+  packetsPerSec: number;
+  trend: Trend;
+  proximity: Proximity;
+  confidence: Confidence;
+  peakRssi: number;
+  lastSeen: number;
+  isStale: boolean;
 };
 
-/** The dBm table from the handoff spec. */
-export function band(rssi: number): Band {
-  if (rssi >= -45) return { key: 'reach', label: "ARM'S REACH", hint: 'Look down. Under, behind, inside something.' };
-  if (rssi >= -60) return { key: 'table', label: 'SAME TABLE', hint: 'A few steps. Sweep the surfaces near you.' };
-  if (rssi >= -72) return { key: 'room', label: 'SAME ROOM', hint: 'Walk the perimeter and watch the tape.' };
-  if (rssi >= -85) return { key: 'far', label: 'FAR, OR BEHIND COVER', hint: 'Try the next room, or open the drawer.' };
-  return { key: 'veryFar', label: 'VERY FAR, OR SHIELDED', hint: 'Metal and bodies eat signal. Keep moving.' };
+// Configurable windows (in milliseconds)
+const SHORT_WINDOW_MS = 1000;
+const MEDIUM_WINDOW_MS = 5000;
+
+export class SignalEngine {
+  private rawSamples: { rssi: number; ts: number }[] = [];
+  private filteredSamples: { rssi: number; ts: number }[] = [];
+  private currentEma: number | null = null;
+  private peakRssi: number = -100;
+  private packetsSinceLastUpdate = 0;
+  private lastUpdateTs = 0;
+
+  constructor(private outlierThreshold = 15) {}
+
+  public ingest(rawRssi: number): SignalStats {
+    const now = Date.now();
+    this.rawSamples.push({ rssi: rawRssi, ts: now });
+    this.packetsSinceLastUpdate++;
+
+    // Prune old samples (> 10s)
+    const cutoff = now - 10000;
+    this.rawSamples = this.rawSamples.filter((s) => s.ts > cutoff);
+    this.filteredSamples = this.filteredSamples.filter((s) => s.ts > cutoff);
+
+    // 1. Outlier Rejection (Median Filter on short window)
+    const recentSamples = this.rawSamples.slice(-5);
+    const medianRssi = this.calculateMedian(recentSamples.map((s) => s.rssi));
+    
+    let acceptedRssi = rawRssi;
+    if (this.currentEma !== null && Math.abs(rawRssi - this.currentEma) > this.outlierThreshold) {
+      // Reject extreme jumps, use median instead
+      acceptedRssi = medianRssi;
+    }
+
+    // 2. Adaptive Smoothing (EMA)
+    let alpha = 0.3;
+    const variance = this.calculateVariance(recentSamples.map(s => s.rssi));
+    if (variance > 25) {
+      alpha = 0.1; // Highly noisy, smooth aggressively
+    } else if (variance < 5) {
+      alpha = 0.5; // Stable, respond faster
+    }
+
+    if (this.currentEma === null) {
+      this.currentEma = acceptedRssi;
+    } else {
+      this.currentEma = this.currentEma + alpha * (acceptedRssi - this.currentEma);
+    }
+
+    this.filteredSamples.push({ rssi: this.currentEma, ts: now });
+
+    // Track Peaks
+    if (this.currentEma > this.peakRssi && variance < 15) {
+      this.peakRssi = this.currentEma;
+    }
+
+    // Rate calculation
+    let pps = 0;
+    if (now - this.lastUpdateTs >= 1000) {
+      pps = this.packetsSinceLastUpdate / ((now - this.lastUpdateTs) / 1000);
+      this.lastUpdateTs = now;
+      this.packetsSinceLastUpdate = 0;
+    }
+
+    return this.calculateStats(now, rawRssi, medianRssi, variance, pps);
+  }
+
+  private calculateStats(now: number, raw: number, median: number, variance: number, pps: number): SignalStats {
+    const shortWindow = this.filteredSamples.filter(s => s.ts >= now - SHORT_WINDOW_MS);
+    const mediumWindow = this.filteredSamples.filter(s => s.ts >= now - MEDIUM_WINDOW_MS);
+
+    // Proximity
+    let proximity: Proximity = 'UNKNOWN';
+    if (this.currentEma! >= -55) proximity = 'VERY CLOSE';
+    else if (this.currentEma! >= -70) proximity = 'NEARBY';
+    else if (this.currentEma! >= -85) proximity = 'FAR';
+    else proximity = 'VERY FAR';
+
+    // Trend
+    let trend: Trend = 'UNCERTAIN';
+    if (mediumWindow.length > 5) {
+      const olderHalf = mediumWindow.slice(0, Math.floor(mediumWindow.length / 2));
+      const recentHalf = mediumWindow.slice(Math.floor(mediumWindow.length / 2));
+      
+      const oldMean = olderHalf.reduce((acc, s) => acc + s.rssi, 0) / olderHalf.length;
+      const recentMean = recentHalf.reduce((acc, s) => acc + s.rssi, 0) / recentHalf.length;
+      
+      const delta = recentMean - oldMean;
+      
+      if (delta > 1.5) trend = 'GETTING WARMER';
+      else if (delta < -1.5) trend = 'GETTING COLDER';
+      else if (Math.abs(delta) <= 1.5) trend = 'STABLE';
+    }
+
+    // Confidence
+    let confidence: Confidence = 'MEDIUM';
+    if (variance < 10 && mediumWindow.length > 10) confidence = 'HIGH';
+    else if (variance > 40 || mediumWindow.length < 3) confidence = 'LOW';
+
+    return {
+      raw,
+      filtered: this.currentEma!,
+      median,
+      variance,
+      packetsPerSec: pps,
+      trend,
+      proximity,
+      confidence,
+      peakRssi: this.peakRssi,
+      lastSeen: now,
+      isStale: false,
+    };
+  }
+
+  private calculateMedian(values: number[]): number {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  private calculateVariance(values: number[]): number {
+    if (values.length === 0) return 0;
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    return values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+  }
 }
 
-/** 0..1 fill for the meter. -95 dBm floor, -40 dBm ceiling. */
-export function fill(rssi: number): number {
-  return clamp((rssi + 95) / 55, 0, 1);
-}
-
-/**
- * Parking-sensor cadence. About one click a second across a room,
- * tightening to a buzz near -50 dBm.
- */
-export function clickIntervalMs(rssi: number): number {
-  const t = clamp((rssi + 90) / 40, 0, 1); // -90 -> 0, -50 -> 1
-  return Math.round(1000 * Math.pow(70 / 1000, t)); // 1000ms -> 70ms, geometric
-}
-
-/**
- * Log-distance path loss. Deliberately reported as a coarse range,
- * never a single number.
- */
-export function roughRange(rssi: number, txPower = -59, n = 2.4): string {
-  const d = Math.pow(10, (txPower - rssi) / (10 * n));
-  if (d < 0.5) return 'under 0.5 m';
-  if (d < 1.5) return '0.5 – 1.5 m';
-  if (d < 4) return '1.5 – 4 m';
-  if (d < 10) return '4 – 10 m';
-  return 'over 10 m';
-}
-
-export type Trend = 'warmer' | 'colder' | 'steady';
-
-/** Compare the recent half of the tape against the older half. */
-export function trend(history: number[], threshold = 1.5): Trend {
-  if (history.length < 8) return 'steady';
-  const window = history.slice(-12);
-  const half = Math.floor(window.length / 2);
-  const older = window.slice(0, half);
-  const recent = window.slice(half);
-  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-  const delta = mean(recent) - mean(older);
-  if (delta > threshold) return 'warmer';
-  if (delta < -threshold) return 'colder';
-  return 'steady';
-}
-
-/** Guess what a device is from its advertised name. Cosmetic only. */
 export function kindOf(name: string | null): string {
   const n = (name ?? '').toLowerCase();
-  if (!n) return 'Unnamed';
+  if (!n) return 'Unknown';
   if (/airpod|buds|headphone|wh-|wf-|beats/.test(n)) return 'Earbuds';
   if (/watch|band|fit|garmin/.test(n)) return 'Watch';
   if (/iphone|galaxy|pixel|redmi|oneplus|phone/.test(n)) return 'Phone';

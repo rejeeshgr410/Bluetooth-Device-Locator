@@ -1,25 +1,22 @@
 import { useEffect, useRef } from 'react';
-import { clickIntervalMs } from './signal';
+import { clickIntervalMs } from './clickInterval';
+import { Trend, Confidence } from './signal';
 
-/**
- * Variable-rate Web Audio synthesizer click engine.
- * Synthesizes the exact 45ms click: 2400Hz falling to 900Hz, exponential decay.
- * Clicks speed up as the signal rises. Silence means no contact.
- */
 export function useClicker(opts: {
   rssi: number | null;
   active: boolean;
   sound: boolean;
   haptics: boolean;
+  trend?: Trend;
+  confidence?: Confidence;
 }) {
-  const { rssi, active, sound, haptics } = opts;
+  const { rssi, active, sound, haptics, trend, confidence } = opts;
   const audioCtxRef = useRef<AudioContext | null>(null);
   const clickBufferRef = useRef<AudioBuffer | null>(null);
   const timerRef = useRef<number | null>(null);
-  const latestRef = useRef({ rssi, active, sound, haptics });
-  latestRef.current = { rssi, active, sound, haptics };
+  const latestRef = useRef(opts);
+  latestRef.current = opts;
 
-  // Generate 45ms click AudioBuffer on mount
   useEffect(() => {
     try {
       const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -41,7 +38,7 @@ export function useClicker(opts: {
       }
       clickBufferRef.current = buffer;
     } catch {
-      // AudioContext unavailable or blocked by browser policy
+      // AudioContext unavailable
     }
 
     return () => {
@@ -64,20 +61,23 @@ export function useClicker(opts: {
             source.buffer = clickBufferRef.current;
             source.connect(audioCtxRef.current.destination);
             source.start();
-          } catch {
-            // Audio error
-          }
-        } else if (!now.sound && audioCtxRef.current?.state === 'running') {
-          audioCtxRef.current.suspend().catch(() => {});
+          } catch {}
         }
+        
         if (now.haptics && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-          const strong = now.rssi > -55;
-          navigator.vibrate(strong ? 35 : 15);
-        }
-      } else {
-        // Signal stale or inactive — suspend audio hardware
-        if (audioCtxRef.current?.state === 'running') {
-          audioCtxRef.current.suspend().catch(() => {});
+          if (now.confidence === 'LOW') {
+            // Signal unstable: intermittent pattern
+            navigator.vibrate([10, 50, 10]);
+          } else if (now.trend === 'GETTING COLDER') {
+            // Signal worsening: different pattern (long)
+            navigator.vibrate(40);
+          } else {
+            // As signal strengthens
+            if (now.rssi > -55) navigator.vibrate([10, 30, 10]); // Very close: distinct short pulses
+            else if (now.rssi > -65) navigator.vibrate(20); // Strong
+            else if (now.rssi > -75) navigator.vibrate(30); // Moderate
+            else navigator.vibrate(40); // Weak
+          }
         }
       }
 

@@ -37,6 +37,13 @@ export function useScanner() {
   const mode: ScanMode = useMemo(() => {
     return isSimulator ? 'simulator' : 'scan';
   }, [isSimulator]);
+  
+  const [searchMode, setSearchModeState] = useState<import('./signal').SearchMode>('ROOM_SWEEP');
+
+  const setSearchMode = useCallback((newMode: import('./signal').SearchMode) => {
+    setSearchModeState(newMode);
+    Object.values(engines.current).forEach(engine => engine.setMode(newMode));
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -68,7 +75,9 @@ export function useScanner() {
 
   const ingest = useCallback((device: BluetoothDeviceRaw, simulated: boolean, virtualPos?: {x: number, y: number}) => {
     if (!engines.current[device.id]) {
-      engines.current[device.id] = new SignalEngine();
+      const engine = new SignalEngine();
+      engine.setMode(searchMode);
+      engines.current[device.id] = engine;
     }
     
     const engine = engines.current[device.id];
@@ -84,7 +93,7 @@ export function useScanner() {
     };
     
     dirty.current = true;
-  }, []);
+  }, [searchMode]);
 
   const clearStore = useCallback(() => {
     store.current = {};
@@ -183,11 +192,13 @@ export function useScanner() {
     scanning,
     isSimulator,
     mode,
+    searchMode,
     error,
     notice,
     start,
     stop,
     toggleSimulator,
     moveUserSimPosition,
+    setSearchMode,
   };
 }

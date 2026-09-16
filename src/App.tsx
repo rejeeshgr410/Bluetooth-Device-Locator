@@ -10,11 +10,13 @@ export default function App() {
     scanning,
     isSimulator,
     mode,
+    searchMode,
     error,
     notice,
     start,
     stop,
     toggleSimulator,
+    setSearchMode,
   } = useScanner();
 
   const [target, setTarget] = useState<{ id: string; name: string | null } | null>(null);
@@ -27,6 +29,8 @@ export default function App() {
         <HuntScreen
           contact={contacts[target.id]}
           onBack={() => setTarget(null)}
+          searchMode={searchMode}
+          onSearchModeChange={setSearchMode}
         />
       ) : (
         <SurveyScreen

@@ -2,14 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Contact } from '../lib/useScanner';
 import { useClicker } from '../lib/useClicker';
 import { useTrail } from '../lib/useTrail';
-import { Trend, Proximity, Confidence, SignalStats } from '../lib/signal';
+import { Trend, Proximity, Confidence, SignalStats, SearchMode } from '../lib/signal';
+import { Tape } from '../components/Tape';
 
 type Props = {
   contact: Contact;
   onBack: () => void;
+  searchMode: SearchMode;
+  onSearchModeChange: (m: SearchMode) => void;
 };
 
-export const HuntScreen: React.FC<Props> = ({ contact, onBack }) => {
+export const HuntScreen: React.FC<Props> = ({ contact, onBack, searchMode, onSearchModeChange }) => {
   const { stats, name, kind } = contact;
   const [expertMode, setExpertMode] = useState(false);
 
@@ -62,6 +65,12 @@ export const HuntScreen: React.FC<Props> = ({ contact, onBack }) => {
     return 'var(--c-alarm)';
   };
 
+  const MODES: { value: SearchMode; label: string }[] = [
+    { value: 'QUICK_SEARCH', label: 'QUICK' },
+    { value: 'ROOM_SWEEP', label: 'SWEEP' },
+    { value: 'FINAL_1_METER', label: 'FINAL' }
+  ];
+
   return (
     <div style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column', height: '100%', minHeight: '100vh', backgroundColor: 'var(--c-ink)' }}>
       {/* Header */}
@@ -81,6 +90,30 @@ export const HuntScreen: React.FC<Props> = ({ contact, onBack }) => {
         >
           <span style={{ fontFamily: "var(--font-mono)", marginRight: '4px' }}>[X]</span> STOP
         </button>
+
+        {/* Mode Selector */}
+        <div style={{ display: 'flex', background: 'var(--c-ink-raised)', borderRadius: '4px', padding: '2px' }}>
+          {MODES.map((m) => (
+            <button
+              key={m.value}
+              onClick={() => onSearchModeChange(m.value)}
+              style={{
+                background: searchMode === m.value ? 'var(--c-muted)' : 'none',
+                color: searchMode === m.value ? 'var(--c-ink)' : 'var(--c-dim)',
+                border: 'none',
+                padding: '6px 10px',
+                fontSize: '10px',
+                fontWeight: 700,
+                letterSpacing: '1px',
+                borderRadius: '2px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Target Info */}
@@ -119,14 +152,9 @@ export const HuntScreen: React.FC<Props> = ({ contact, onBack }) => {
               {stats.proximity}
             </div>
 
-            {/* Signal Strength Bar */}
-            <div style={{ width: '100%', height: '16px', backgroundColor: 'var(--c-ink)', borderRadius: '8px', overflow: 'hidden' }}>
-              <div style={{ 
-                height: '100%', 
-                width: `${Math.max(0, Math.min(100, (stats.filtered + 95) * 1.8))}%`, 
-                backgroundColor: 'var(--c-warm)',
-                transition: 'width 0.3s ease-out'
-              }} />
+            {/* Tape Graph */}
+            <div style={{ width: '100%', marginBottom: '12px' }}>
+              <Tape history={stats.history} height={120} />
             </div>
 
             <div style={{ fontSize: '18px', fontWeight: 700, color: getConfidenceColor(stats.confidence) }}>

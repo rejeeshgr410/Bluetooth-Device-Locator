@@ -4,6 +4,7 @@ export const LOST_AFTER_MS = 15000;
 export type Proximity = 'VERY CLOSE' | 'NEARBY' | 'FAR' | 'VERY FAR' | 'UNKNOWN';
 export type Trend = 'GETTING WARMER' | 'GETTING COLDER' | 'STABLE' | 'UNCERTAIN';
 export type Confidence = 'HIGH' | 'MEDIUM' | 'LOW';
+export type SearchMode = 'QUICK_SEARCH' | 'ROOM_SWEEP' | 'FINAL_1_METER';
 
 export type SignalStats = {
   raw: number;
@@ -17,11 +18,15 @@ export type SignalStats = {
   peakRssi: number;
   lastSeen: number;
   isStale: boolean;
+  history: (number | null)[]; // For the Tape graph
 };
 
 // Configurable windows (in milliseconds)
-const SHORT_WINDOW_MS = 1000;
-const MEDIUM_WINDOW_MS = 5000;
+const WINDOWS = {
+  QUICK_SEARCH: { short: 1000, medium: 3000 },
+  ROOM_SWEEP: { short: 1000, medium: 5000 },
+  FINAL_1_METER: { short: 500, medium: 2000 }
+};
 
 export class SignalEngine {
   private rawSamples: { rssi: number; ts: number }[] = [];
@@ -30,8 +35,13 @@ export class SignalEngine {
   private peakRssi: number = -100;
   private packetsSinceLastUpdate = 0;
   private lastUpdateTs = 0;
+  private mode: SearchMode = 'ROOM_SWEEP';
 
   constructor(private outlierThreshold = 15) {}
+
+  public setMode(mode: SearchMode) {
+    this.mode = mode;
+  }
 
   public ingest(rawRssi: number): SignalStats {
     const now = Date.now();
@@ -61,6 +71,9 @@ export class SignalEngine {
     } else if (variance < 5) {
       alpha = 0.5; // Stable, respond faster
     }
+    
+    // In final meter, we want faster response
+    if (this.mode === 'FINAL_1_METER') alpha = Math.max(0.4, alpha);
 
     if (this.currentEma === null) {
       this.currentEma = acceptedRssi;
@@ -87,8 +100,9 @@ export class SignalEngine {
   }
 
   private calculateStats(now: number, raw: number, median: number, variance: number, pps: number): SignalStats {
-    const shortWindow = this.filteredSamples.filter(s => s.ts >= now - SHORT_WINDOW_MS);
-    const mediumWindow = this.filteredSamples.filter(s => s.ts >= now - MEDIUM_WINDOW_MS);
+    const config = WINDOWS[this.mode];
+    const shortWindow = this.filteredSamples.filter(s => s.ts >= now - config.short);
+    const mediumWindow = this.filteredSamples.filter(s => s.ts >= now - config.medium);
 
     // Proximity
     let proximity: Proximity = 'UNKNOWN';
@@ -117,6 +131,16 @@ export class SignalEngine {
     let confidence: Confidence = 'MEDIUM';
     if (variance < 10 && mediumWindow.length > 10) confidence = 'HIGH';
     else if (variance > 40 || mediumWindow.length < 3) confidence = 'LOW';
+    
+    // Generate 60 points of history for the Tape graph based on the last 10 seconds
+    const history = Array.from({ length: 60 }).map((_, i) => {
+      const ts = now - (60 - i) * (10000 / 60);
+      // Find nearest sample
+      const nearest = this.filteredSamples.reduce((prev, curr) => 
+        Math.abs(curr.ts - ts) < Math.abs(prev.ts - ts) ? curr : prev
+      , { rssi: -100, ts: 0 });
+      return Math.abs(nearest.ts - ts) < 1000 ? nearest.rssi : null;
+    });
 
     return {
       raw,
@@ -130,6 +154,7 @@ export class SignalEngine {
       peakRssi: this.peakRssi,
       lastSeen: now,
       isStale: false,
+      history,
     };
   }
 

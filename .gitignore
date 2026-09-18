@@ -6,6 +6,10 @@ dist
 *.aab
 *.idsig
 signing/
-android/
+/android/
 android-twa/
 clean*.cjs
+
+# Gradle output of local Capacitor plugins
+plugins/*/android/build/
+plugins/*/android/.gradle/

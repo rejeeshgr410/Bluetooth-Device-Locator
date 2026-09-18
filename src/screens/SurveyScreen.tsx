@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Contact } from '../lib/useScanner';
 import { ThemeMode } from '../lib/theme';
 
@@ -29,6 +29,9 @@ export const SurveyScreen: React.FC<Props> = ({
 }) => {
   const [filter, setFilter] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  // Sort key per device that only moves when the signal really changes (> 6 dB), so
+  // rows don't swap places under your finger as readings jitter.
+  const sortScore = useRef<Map<string, number>>(new Map());
 
   const rows = useMemo(() => {
     let arr = Object.values(contacts);
@@ -49,8 +52,20 @@ export const SurveyScreen: React.FC<Props> = ({
       });
     }
 
-    // Sort by signal strength (strongest first)
-    return arr.sort((a, b) => b.stats.filtered - a.stats.filtered);
+    // Strongest first. Stale devices keep their place (they are dimmed, and dropped after
+    // 25 s): phones and tags advertise slowly, so sinking them on every quiet spell made
+    // rows jump about every second on a real phone.
+    const scores = sortScore.current;
+    for (const c of arr) {
+      const prev = scores.get(c.id);
+      if (prev === undefined || Math.abs(c.stats.filtered - prev) > 6) scores.set(c.id, c.stats.filtered);
+    }
+    return arr.sort(
+      (a, b) =>
+        (scores.get(b.id) ?? -127) - (scores.get(a.id) ?? -127) ||
+        a.firstSeen - b.firstSeen ||
+        (a.id < b.id ? -1 : 1),
+    );
   }, [contacts, filter, selectedCategory]);
 
   const categories = [
@@ -99,7 +114,8 @@ export const SurveyScreen: React.FC<Props> = ({
           zIndex: 20,
           backgroundColor: 'var(--c-surface)',
           borderBottom: '1px solid var(--c-border)',
-          padding: '16px 20px',
+          padding: '16px',
+          paddingTop: 'calc(16px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)))',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -156,7 +172,7 @@ export const SurveyScreen: React.FC<Props> = ({
       </header>
 
       {/* Main Content Area */}
-      <main style={{ flex: 1, padding: '16px 20px', maxWidth: '800px', width: '100%', margin: '0 auto' }}>
+      <main style={{ flex: 1, padding: '16px', maxWidth: '800px', width: '100%', margin: '0 auto' }}>
         {/* Error / Notice Banners */}
         {error && (
           <div
@@ -446,15 +462,23 @@ export const SurveyScreen: React.FC<Props> = ({
                       <span style={{ fontSize: '11px', color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
                         {item.id}
                       </span>
-                      <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>•</span>
-                      <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>
-                        {item.kind}
-                      </span>
+                      {item.kind !== 'Bluetooth Device' && (
+                        <>
+                          <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>•</span>
+                          <span style={{ fontSize: '11px', color: 'var(--c-text-muted)', whiteSpace: 'nowrap' }}>
+                            {item.kind}
+                          </span>
+                        </>
+                      )}
                     </div>
 
                     {/* Proximity / Distance estimate */}
                     <div style={{ fontSize: '12px', fontWeight: 600, color: signalColor, marginTop: '4px' }}>
-                      {item.stats.proximity} ({item.stats.approxDistance})
+                      {stale
+                        ? 'Not heard recently'
+                        : item.stats.distanceHighM < 0.5
+                        ? `${item.stats.proximity} · < 0.5 m`
+                        : `${item.stats.proximity} · ≈ ${item.stats.distanceM < 10 ? item.stats.distanceM.toFixed(1) : Math.round(item.stats.distanceM)} m`}
                     </div>
                   </div>
 

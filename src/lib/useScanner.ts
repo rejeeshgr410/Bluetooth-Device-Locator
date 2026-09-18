@@ -7,8 +7,38 @@ export type Contact = {
   name: string;
   kind: string;
   isGuessed: boolean;
+  firstSeen: number;
   stats: SignalStats;
 };
+
+// Per-device "RSSI at 1 m", measured by the user. Survives restarts.
+const CALIBRATION_KEY = 'bt-locator.calibration.v1';
+
+/**
+ * Phones, earbuds and PCs rotate their address every few minutes (seen on a real hunt:
+ * four addresses in 30 min for one PC), so a device with a real advertised name is
+ * calibrated by name. Guessed labels include the address, so those fall back to it.
+ */
+function calibrationKey(id: string, name: string, isGuessed: boolean): string {
+  return isGuessed ? id : `name:${name}`;
+}
+
+function loadCalibrations(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(CALIBRATION_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCalibrations(map: Record<string, number>) {
+  try {
+    localStorage.setItem(CALIBRATION_KEY, JSON.stringify(map));
+  } catch {
+    // storage unavailable; calibration lasts for this session only
+  }
+}
 
 export function useScanner() {
   const [contacts, setContacts] = useState<Record<string, Contact>>({});
@@ -21,10 +51,20 @@ export function useScanner() {
   const store = useRef<Record<string, Contact>>({});
   const dirty = useRef(false);
   const stopScanFn = useRef<(() => void) | null>(null);
+  // The scan callback outlives renders, so everything it reads goes through refs.
+  const modeRef = useRef<SearchMode>('ROOM_SWEEP');
+  const calibrations = useRef<Record<string, number>>(loadCalibrations());
+  const pinnedId = useRef<string | null>(null);
 
   const setSearchMode = useCallback((newMode: SearchMode) => {
+    modeRef.current = newMode;
     setSearchModeState(newMode);
     Object.values(engines.current).forEach((engine) => engine.setMode(newMode));
+  }, []);
+
+  /** The device being hunted is never dropped from the list, only marked stale. */
+  const pin = useCallback((id: string | null) => {
+    pinnedId.current = id;
   }, []);
 
   // Housekeeping loop for stale / lost markers
@@ -37,12 +77,12 @@ export function useScanner() {
         const contact = store.current[key];
         const age = now - contact.stats.lastSeen;
 
-        if (age > LOST_AFTER_MS) {
+        if (age > LOST_AFTER_MS && key !== pinnedId.current) {
           delete store.current[key];
           delete engines.current[key];
           hasChanges = true;
         } else if (age > STALE_AFTER_MS && !contact.stats.isStale) {
-          store.current[key].stats.isStale = true;
+          store.current[key] = { ...contact, stats: { ...contact.stats, isStale: true } };
           hasChanges = true;
         }
       }
@@ -56,34 +96,50 @@ export function useScanner() {
     return () => clearInterval(id);
   }, []);
 
-  const ingest = useCallback(
-    (device: BluetoothDeviceRaw) => {
-      if (!engines.current[device.id]) {
-        const engine = new SignalEngine();
-        engine.setMode(searchMode);
-        engines.current[device.id] = engine;
-      }
+  const ingest = useCallback((device: BluetoothDeviceRaw) => {
+    let engine = engines.current[device.id];
+    if (!engine) {
+      engine = new SignalEngine(modeRef.current);
+      engines.current[device.id] = engine;
+    }
+    // Checked on every packet: a real name can arrive after the first packets
+    const calibrated = calibrations.current[calibrationKey(device.id, device.name, device.isGuessed)];
+    if (calibrated !== undefined && engine.getStats()?.refSource !== 'calibrated') {
+      engine.setReferencePower(calibrated, 'calibrated');
+    }
+    if (device.refPower !== undefined) engine.setReferencePower(device.refPower, 'advertised');
 
-      const engine = engines.current[device.id];
-      const stats = engine.ingest(device.rssi);
+    const stats = engine.ingest(device.rssi);
 
-      // Preserve previously better name if current one is guessed
-      const existing = store.current[device.id];
-      const bestName = existing && !existing.isGuessed ? existing.name : device.name;
-      const bestKind = existing && existing.kind !== 'Bluetooth Device' ? existing.kind : device.kind;
+    // Keep a real name once we have one; don't let a later guessed label overwrite it
+    const existing = store.current[device.id];
+    const keepExisting = existing && !existing.isGuessed && device.isGuessed;
+    const bestKind = existing && existing.kind !== 'Bluetooth Device' ? existing.kind : device.kind;
 
-      store.current[device.id] = {
-        id: device.id,
-        name: bestName,
-        kind: bestKind,
-        isGuessed: existing ? existing.isGuessed && device.isGuessed : device.isGuessed,
-        stats,
-      };
+    store.current[device.id] = {
+      id: device.id,
+      name: keepExisting ? existing.name : device.name,
+      kind: bestKind,
+      isGuessed: keepExisting ? false : device.isGuessed,
+      firstSeen: existing?.firstSeen ?? stats.lastSeen,
+      stats,
+    };
 
-      dirty.current = true;
-    },
-    [searchMode]
-  );
+    dirty.current = true;
+  }, []);
+
+  /** Store the current reading as this device's "1 metre" reference. */
+  const calibrate = useCallback((id: string): number | null => {
+    const engine = engines.current[id];
+    const ref = engine?.calibrateAtOneMetre() ?? null;
+    const contact = store.current[id];
+    if (ref !== null && contact) {
+      const key = calibrationKey(id, contact.name, contact.isGuessed);
+      calibrations.current = { ...calibrations.current, [key]: ref };
+      saveCalibrations(calibrations.current);
+    }
+    return ref;
+  }, []);
 
   const teardownRadio = useCallback(() => {
     if (stopScanFn.current) {
@@ -105,12 +161,10 @@ export function useScanner() {
         return;
       }
       if (!locationOk) {
-        setNotice('Notice: Android Location Services are turned off. Enabling Location in phone Settings allows detecting more BLE beacons.');
+        setNotice('Location is switched off. Android delivers no Bluetooth scan results without it — turn Location on in quick settings.');
       }
 
-      stopScanFn.current = await bluetoothService.startScan((device) => {
-        ingest(device);
-      });
+      stopScanFn.current = await bluetoothService.startScan(ingest);
       setScanning(true);
     } catch (err: any) {
       teardownRadio();
@@ -142,5 +196,7 @@ export function useScanner() {
     stop,
     clear,
     setSearchMode,
+    calibrate,
+    pin,
   };
 }

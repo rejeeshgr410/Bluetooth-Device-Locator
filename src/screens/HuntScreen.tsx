@@ -2,13 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Contact } from '../lib/useScanner';
 import { useClicker } from '../lib/useClicker';
 import { useTrail } from '../lib/useTrail';
-import { Trend, Proximity, Confidence, SignalStats, SearchMode } from '../lib/signal';
+import { SignalStats, SearchMode, DEFAULT_REF_POWER } from '../lib/signal';
 import { Tape } from '../components/Tape';
+import { TrackMap } from '../components/TrackMap';
+import { relativeBearing, distanceTo, steer } from '../lib/breadcrumbs';
 import { ThemeMode } from '../lib/theme';
 
 type Props = {
   contact: Contact;
+  scanning: boolean;
   onBack: () => void;
+  onCalibrate: () => number | null;
+  followNote: string | null;
+  onDismissNote: () => void;
   searchMode: SearchMode;
   onSearchModeChange: (m: SearchMode) => void;
   theme: ThemeMode;
@@ -17,7 +23,11 @@ type Props = {
 
 export const HuntScreen: React.FC<Props> = ({
   contact,
+  scanning,
   onBack,
+  onCalibrate,
+  followNote,
+  onDismissNote,
   searchMode,
   onSearchModeChange,
   theme,
@@ -27,10 +37,20 @@ export const HuntScreen: React.FC<Props> = ({
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [calibrationNote, setCalibrationNote] = useState<string | null>(null);
+  const [, setTick] = useState(0);
+
+  // Re-render once a second so "x s ago" labels stay honest between packets
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   // Audio / Haptic feedback engine
+  // Cadence follows closeness, not raw dBm: shift by this device's 1 m reference so a
+  // quiet tag at arm's length clicks like a loud phone at arm's length.
   useClicker({
-    rssi: stats.filtered,
+    rssi: stats.filtered - (stats.refPower - DEFAULT_REF_POWER),
     active: !stats.isStale && (audioEnabled || hapticsEnabled),
     sound: audioEnabled,
     haptics: hapticsEnabled,
@@ -39,7 +59,19 @@ export const HuntScreen: React.FC<Props> = ({
   });
 
   // Dead reckoning sensors (steps + compass orientation)
-  const { quality, fix, requestAccess, permission, calibrateStride, stride } = useTrail({
+  const {
+    quality,
+    fix,
+    requestAccess,
+    permission,
+    calibrateStride,
+    stride,
+    crumbs,
+    track,
+    estimate,
+    dropManual,
+    clear: clearTrail,
+  } = useTrail({
     rssi: stats.isStale ? null : stats.filtered,
     active: true,
     stride: 0.75,
@@ -49,29 +81,64 @@ export const HuntScreen: React.FC<Props> = ({
     if (permission === 'prompt') requestAccess();
   }, [permission, requestAccess]);
 
+  const belowPeak = stats.peakRssi - stats.filtered;
+  const peakAgoS = Math.max(0, Math.round((Date.now() - stats.peakAt) / 1000));
+
   const getAssistantGuidance = (stats: SignalStats) => {
+    if (!scanning) {
+      return 'Scanning is stopped. Go back and tap "Start Radar" to resume live readings.';
+    }
     if (stats.isStale) {
-      return 'Signal interrupted. Return toward your last known strong location.';
+      return 'No packets for a few seconds. The device may be off, out of range, or shielded (metal, water, a body). Go back to where the signal was last strongest.';
     }
-
+    if (stats.confidence === 'LOW' && stats.trend === 'UNCERTAIN') {
+      return 'Collecting readings. Hold the phone still for a moment, then walk slowly in one direction.';
+    }
     if (stats.proximity === 'VERY CLOSE') {
-      return '🎯 Target is in arm\'s reach! Check under cushions, in pockets, or behind objects.';
+      return "🎯 Within arm's reach. Look down, under, behind and inside things: cushions, bags, pockets, drawers. Switch to Precision mode.";
     }
-
+    if (belowPeak >= 8 && stats.peakAt > 0) {
+      return `↩ You are ${Math.round(belowPeak)} dB below the strongest reading (${peakAgoS}s ago). Retrace your steps to where it peaked, then try a different direction.`;
+    }
     if (stats.trend === 'GETTING WARMER') {
-      return '🔥 Getting warmer! You are moving in the right direction. Keep walking.';
+      return '🔥 Getting warmer. Keep going the same way, slowly.';
     }
-
     if (stats.trend === 'GETTING COLDER') {
-      return '❄️ Getting colder! You are moving away. Turn around and try another direction.';
+      return '❄️ Getting colder. Turn around, or try 90° left or right.';
     }
-
-    if (stats.trend === 'STABLE') {
-      return '🧭 Signal is steady. Walk a few steps in different directions to determine the path.';
+    if (stats.proximity === 'NEARBY') {
+      return 'A few steps away. Sweep the surfaces around you slowly; pause 2 s at each spot.';
     }
-
-    return 'Walk slowly around the room to establish signal direction.';
+    if (stats.proximity === 'MID RANGE') {
+      return "Same room or next door. Walk the room's perimeter and watch the tape for a rise.";
+    }
+    return 'Far or behind cover. Try the next room, and keep the phone away from your body.';
   };
+
+  const distanceSourceLabel =
+    stats.refSource === 'calibrated'
+      ? 'calibrated for this device'
+      : stats.refSource === 'advertised'
+      ? "from the device's broadcast power"
+      : 'rough estimate: calibrate for accuracy';
+
+  const handleCalibrate = () => {
+    if (stats.isStale) {
+      setCalibrationNote('Wait until the signal is live before calibrating.');
+      return;
+    }
+    const ok = window.confirm(
+      'Calibrate distance\n\nPlace the phone exactly 1 metre from the device, with nothing in between, and hold still for 3 seconds. Then tap OK.',
+    );
+    if (!ok) return;
+    const ref = onCalibrate();
+    setCalibrationNote(
+      ref === null ? 'Calibration failed: no signal yet.' : `Saved: ${ref} dBm at 1 m. Distances for this device are now calibrated.`,
+    );
+  };
+
+  const steering =
+    crumbs.length >= 2 ? steer(relativeBearing(fix, estimate), distanceTo(fix, estimate)) : null;
 
   const getSignalColor = (rssi: number) => {
     if (rssi >= -55) return 'var(--c-success)';
@@ -80,7 +147,18 @@ export const HuntScreen: React.FC<Props> = ({
     return 'var(--c-danger)';
   };
 
-  const signalColor = getSignalColor(stats.filtered);
+  // Colour follows the distance estimate (which knows this device's 1 m power), so the
+  // colour and the proximity label never disagree.
+  const signalColor =
+    stats.proximity === 'VERY CLOSE'
+      ? 'var(--c-success)'
+      : stats.proximity === 'NEARBY'
+      ? 'var(--c-primary)'
+      : stats.proximity === 'MID RANGE'
+      ? 'var(--c-warning)'
+      : stats.proximity === 'FAR'
+      ? 'var(--c-danger)'
+      : getSignalColor(stats.filtered);
 
   const MODES: { value: SearchMode; label: string; desc: string }[] = [
     { value: 'QUICK_SEARCH', label: 'Quick Scout', desc: 'Fast reaction' },
@@ -99,6 +177,7 @@ export const HuntScreen: React.FC<Props> = ({
           backgroundColor: 'var(--c-surface)',
           borderBottom: '1px solid var(--c-border)',
           padding: '12px 16px',
+          paddingTop: 'calc(12px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)))',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -185,7 +264,25 @@ export const HuntScreen: React.FC<Props> = ({
       </header>
 
       {/* Main Content */}
-      <main style={{ flex: 1, padding: '16px 20px', maxWidth: '720px', width: '100%', margin: '0 auto' }}>
+      <main style={{ flex: 1, padding: '16px', maxWidth: '720px', width: '100%', margin: '0 auto' }}>
+        {followNote && (
+          <div
+            onClick={onDismissNote}
+            role="button"
+            style={{
+              marginBottom: '12px',
+              padding: '10px 14px',
+              borderRadius: '10px',
+              backgroundColor: 'var(--c-primary-light)',
+              border: '1px solid var(--c-primary)',
+              color: 'var(--c-text)',
+              fontSize: '13px',
+            }}
+          >
+            🔁 {followNote} <span style={{ color: 'var(--c-text-muted)' }}>(tap to dismiss)</span>
+          </div>
+        )}
+
         {/* Target Header Card */}
         <div
           style={{
@@ -210,8 +307,12 @@ export const HuntScreen: React.FC<Props> = ({
               <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--c-text-muted)' }}>
                 {id}
               </span>
-              <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>•</span>
-              <span style={{ fontSize: '12px', color: 'var(--c-text-muted)' }}>{kind}</span>
+              {kind !== 'Bluetooth Device' && (
+                <>
+                  <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>•</span>
+                  <span style={{ fontSize: '12px', color: 'var(--c-text-muted)' }}>{kind}</span>
+                </>
+              )}
             </div>
           </div>
 
@@ -290,7 +391,7 @@ export const HuntScreen: React.FC<Props> = ({
         >
           {/* Animated Radar Halo */}
           <div
-            className={!stats.isStale ? 'pulse-anim' : ''}
+            className={!stats.isStale ? 'halo-anim' : ''}
             style={{
               width: '180px',
               height: '180px',
@@ -318,12 +419,46 @@ export const HuntScreen: React.FC<Props> = ({
               margin: '8px 0 4px',
             }}
           >
-            {stats.isStale ? 'SIGNAL INTERRUPTED' : stats.proximity}
+            {stats.isStale ? 'SIGNAL LOST' : stats.proximity === 'UNKNOWN' ? 'LISTENING…' : stats.proximity}
           </div>
 
-          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--c-text-secondary)', marginBottom: '16px' }}>
-            Estimated Range: {stats.approxDistance}
+          <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--c-text)', position: 'relative' }}>
+            {stats.isStale ? 'Distance unknown' : stats.approxDistance}
           </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              margin: '4px 0 16px',
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+              position: 'relative',
+            }}
+          >
+            <span style={{ fontSize: '12px', color: stats.refSource === 'default' ? 'var(--c-warning)' : 'var(--c-text-muted)' }}>
+              {distanceSourceLabel}
+            </span>
+            <button
+              onClick={handleCalibrate}
+              style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                color: 'var(--c-primary)',
+                padding: '4px 10px',
+                borderRadius: '14px',
+                border: '1px solid var(--c-primary)',
+                backgroundColor: 'var(--c-primary-light)',
+              }}
+            >
+              📏 Calibrate at 1 m
+            </button>
+          </div>
+          {calibrationNote && (
+            <div style={{ fontSize: '12px', color: 'var(--c-text-secondary)', marginTop: '-8px', marginBottom: '12px' }}>
+              {calibrationNote}
+            </div>
+          )}
 
           {/* Trend Indicator Banner */}
           <div
@@ -353,11 +488,15 @@ export const HuntScreen: React.FC<Props> = ({
             }}
           >
             <span>
-              {stats.trend === 'GETTING WARMER'
-                ? '🟢 ↑ GETTING WARMER'
+              {stats.isStale
+                ? '⚪ SIGNAL LOST'
+                : stats.trend === 'GETTING WARMER'
+                ? `🟢 ↑ GETTING WARMER  +${stats.delta.toFixed(0)} dB`
                 : stats.trend === 'GETTING COLDER'
-                ? '🔴 ↓ GETTING COLDER'
-                : '🟡 → SIGNAL STEADY'}
+                ? `🔴 ↓ GETTING COLDER  ${stats.delta.toFixed(0)} dB`
+                : stats.trend === 'STABLE'
+                ? '🟡 → SIGNAL STEADY'
+                : '⏳ READING SIGNAL…'}
             </span>
           </div>
 
@@ -431,12 +570,82 @@ export const HuntScreen: React.FC<Props> = ({
             <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--c-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               Live Signal Progression (10s)
             </span>
-            <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>
-              Peak: {Math.round(stats.peakRssi)} dBm
+            <span style={{ fontSize: '11px', color: belowPeak >= 8 ? 'var(--c-warning)' : 'var(--c-text-muted)' }}>
+              Best: {Math.round(stats.peakRssi)} dBm · {peakAgoS}s ago
             </span>
           </div>
 
           <Tape history={stats.history} height={120} />
+        </div>
+
+        {/* Trail: walked path + automatic peak marks -> triangulated estimate */}
+        <div
+          style={{
+            backgroundColor: 'var(--c-surface)',
+            border: '1px solid var(--c-border)',
+            borderRadius: '14px',
+            padding: '16px',
+            marginBottom: '16px',
+            boxShadow: 'var(--shadow-sm)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--c-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Trail · {crumbs.length} mark{crumbs.length === 1 ? '' : 's'} · {fix.steps} steps
+            </span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: quality === 'GOOD' ? 'var(--c-success)' : 'var(--c-warning)' }}>
+              Sensors {quality.toLowerCase()}
+            </span>
+          </div>
+
+          {steering && (
+            <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--c-primary)', textAlign: 'center', margin: '6px 0 4px' }}>
+              {steering}
+            </div>
+          )}
+          <div style={{ fontSize: '12px', color: 'var(--c-text-secondary)', textAlign: 'center', marginBottom: '10px', lineHeight: 1.4 }}>
+            {quality === 'UNAVAILABLE'
+              ? 'Motion sensors are not reporting, so the trail cannot be drawn. The meter above still works.'
+              : estimate.note}
+          </div>
+
+          <TrackMap track={track} crumbs={crumbs} estimate={estimate} fix={fix} size={300} />
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px' }}>
+            <button
+              onClick={dropManual}
+              disabled={stats.isStale}
+              style={{
+                padding: '10px',
+                borderRadius: '8px',
+                backgroundColor: 'var(--c-primary)',
+                color: '#FFFFFF',
+                fontWeight: 700,
+                fontSize: '13px',
+                opacity: stats.isStale ? 0.5 : 1,
+              }}
+            >
+              📍 Mark reading here
+            </button>
+            <button
+              onClick={clearTrail}
+              style={{
+                padding: '10px',
+                borderRadius: '8px',
+                backgroundColor: 'var(--c-surface-elevated)',
+                border: '1px solid var(--c-border)',
+                color: 'var(--c-text)',
+                fontWeight: 600,
+                fontSize: '13px',
+              }}
+            >
+              ↺ Reset trail
+            </button>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--c-text-muted)', marginTop: '8px', lineHeight: 1.4 }}>
+            Hold the phone in front of you and walk a wide loop. Marks drop automatically at each signal peak; three or
+            more from different spots give a direction.
+          </div>
         </div>
 
         {/* Collapsible Diagnostics & Dead Reckoning */}
@@ -524,9 +733,11 @@ export const HuntScreen: React.FC<Props> = ({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontFamily: 'var(--font-mono)' }}>
                   <div>Raw RSSI: {stats.raw} dBm</div>
                   <div>Filtered: {Math.round(stats.filtered)} dBm</div>
-                  <div>Variance: {stats.variance.toFixed(1)}</div>
+                  <div>Noise σ: {Math.sqrt(stats.variance).toFixed(1)} dB</div>
                   <div>Rate: {stats.packetsPerSec.toFixed(1)} pkts/s</div>
                   <div>Confidence: {stats.confidence}</div>
+                  <div>Slope: {stats.velocity.toFixed(2)} dB/s</div>
+                  <div>1 m ref: {Math.round(stats.refPower)} dBm ({stats.refSource})</div>
                   <div>Last Packet: {((Date.now() - stats.lastSeen) / 1000).toFixed(1)}s ago</div>
                 </div>
               </div>

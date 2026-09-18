@@ -1,0 +1,15 @@
+{
+  "name": "proximity-haptics",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Proximity vibration that is not dropped when system touch feedback is off (Android native side; the JS side is registered in src/lib/proximityHaptics.ts).",
+  "files": ["android/src/main/", "android/build.gradle"],
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}

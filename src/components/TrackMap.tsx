@@ -68,7 +68,7 @@ export const TrackMap: React.FC<TrackMapProps> = ({
         maxWidth: `${size}px`,
         aspectRatio: '1 / 1',
         position: 'relative',
-        backgroundColor: 'var(--c-ink-raised)',
+        backgroundColor: 'var(--c-surface-elevated)',
         borderRadius: '4px',
         overflow: 'hidden',
         border: '1px solid var(--c-hairline)',
@@ -141,7 +141,7 @@ export const TrackMap: React.FC<TrackMapProps> = ({
               width: `${d}px`,
               height: `${d}px`,
               borderRadius: '50%',
-              backgroundColor: 'var(--c-amber)',
+              backgroundColor: 'var(--c-warning)',
               opacity: 0.25 + strength * 0.6,
               border: k.manual ? '1.5px solid var(--c-text)' : 'none',
               boxShadow: '0 0 6px rgba(255, 176, 0, 0.4)',
@@ -161,7 +161,7 @@ export const TrackMap: React.FC<TrackMapProps> = ({
             width: '40px',
             height: '40px',
             borderRadius: '50%',
-            border: `1px solid ${estimate.confidence === 'good' ? 'var(--c-warm)' : 'var(--c-muted)'}`,
+            border: `1px solid ${estimate.confidence === 'good' ? 'var(--c-primary)' : 'var(--c-text-muted)'}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -174,7 +174,7 @@ export const TrackMap: React.FC<TrackMapProps> = ({
               width: '6px',
               height: '6px',
               borderRadius: '50%',
-              backgroundColor: estimate.confidence === 'good' ? 'var(--c-warm)' : 'var(--c-muted)',
+              backgroundColor: estimate.confidence === 'good' ? 'var(--c-primary)' : 'var(--c-text-muted)',
             }}
           />
         </div>
@@ -215,7 +215,7 @@ export const TrackMap: React.FC<TrackMapProps> = ({
           bottom: '6px',
           fontFamily: 'var(--font-mono)',
           fontSize: '10px',
-          color: 'var(--c-dim)',
+          color: 'var(--c-text-muted)',
           letterSpacing: '1px',
         }}
       >

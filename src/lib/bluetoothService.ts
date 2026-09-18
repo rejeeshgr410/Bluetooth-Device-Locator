@@ -17,7 +17,9 @@ export type ScanCallback = (device: BluetoothDeviceRaw) => void;
 
 let isNativeInitialized = false;
 
-const SCAN_REFRESH_MS = 20000;
+const SCAN_REFRESH_MS = 20000; // routine restart
+const SCAN_SILENCE_MS = 4000; // nothing from any device this long -> restart early
+const SCAN_MIN_GAP_MS = 8000; // keeps starts under Android's 5-per-30-s limit
 
 export const bluetoothService = {
   async init(): Promise<void> {
@@ -82,7 +84,9 @@ export const bluetoothService = {
 
       // 3. Highest duty-cycle scan with every duplicate packet reported. BALANCED (the
       //    default) delivers a fraction of the packets, which starves the filter.
+      let lastResultAt = Date.now();
       const onScan = (result: ScanResult) => {
+        lastResultAt = Date.now();
         // 127 means "not available" on Android; a missing RSSI is not -100 dBm.
         if (typeof result.rssi !== 'number' || result.rssi >= 0) return;
         const { name, kind, isGuessed } = resolveDeviceIdentity(result);
@@ -99,20 +103,27 @@ export const bluetoothService = {
       const begin = () =>
         BleClient.requestLEScan({ allowDuplicates: true, scanMode: ScanMode.SCAN_MODE_LOW_LATENCY }, onScan);
       await begin();
+      let startedAt = Date.now();
 
       // Measured on a Pixel 8 Pro: one long continuous scan goes quietly deaf within
       // minutes (18 devices -> 1, and the hunted target reads SIGNAL LOST) while Android
       // still reports it as running. Restarting brings everything back at once. Every
       // 20 s stays well under Android's limit of 5 scan starts per 30 s, and also
-      // avoids the 30-minute downgrade to opportunistic scanning.
+      // avoids the 30-minute downgrade to opportunistic scanning. If nothing at all has
+      // been heard for 4 s the scan is probably deaf, so restart early (at most every 8 s).
       let stopped = false;
       let restarting = false;
       const refresh = window.setInterval(async () => {
         if (stopped || restarting) return;
+        const now = Date.now();
+        const sinceStart = now - startedAt;
+        const deaf = now - lastResultAt >= SCAN_SILENCE_MS && sinceStart >= SCAN_MIN_GAP_MS;
+        if (sinceStart < SCAN_REFRESH_MS && !deaf) return;
         restarting = true;
         try {
           await BleClient.stopLEScan();
           if (!stopped) await begin();
+          startedAt = Date.now();
           // stop() may have run while begin() was in flight
           if (stopped) await BleClient.stopLEScan();
         } catch (err) {
@@ -120,7 +131,7 @@ export const bluetoothService = {
         } finally {
           restarting = false;
         }
-      }, SCAN_REFRESH_MS);
+      }, 1000);
 
       return () => {
         stopped = true;

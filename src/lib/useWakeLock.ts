@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { KeepAwake } from '@capacitor-community/keep-awake';
 
 type WakeLockSentinelLike = {
   released: boolean;
@@ -21,7 +23,18 @@ type WakeLockCapableNavigator = Navigator & {
 export function useWakeLock(active: boolean) {
   const sentinel = useRef<WakeLockSentinelLike | null>(null);
 
+  // Android's WebView has no Screen Wake Lock API; use the window flag natively.
   useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    if (active) void KeepAwake.keepAwake().catch(() => {});
+    else void KeepAwake.allowSleep().catch(() => {});
+    return () => {
+      void KeepAwake.allowSleep().catch(() => {});
+    };
+  }, [active]);
+
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) return;
     const nav = navigator as WakeLockCapableNavigator;
     if (!active || !nav.wakeLock) return;
 

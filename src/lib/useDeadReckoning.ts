@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { Motion } from '@capacitor/motion';
 
 export type Fix = { x: number; y: number; heading: number; steps: number };
 
@@ -99,35 +98,36 @@ export function useDeadReckoning(opts: { active: boolean; initialStride?: number
       listenersRef.current = [];
 
       try {
-        if (Capacitor.isNativePlatform()) {
-          // Step detection needs gravity included: `acceleration` has it removed, so its
-          // magnitude sits near 0 g and never crosses the 1.14 g step threshold.
-          const accelHandle = await Motion.addListener('accel', (event) => {
-            const acc = event.accelerationIncludingGravity;
-            handleAccel(acc.x, acc.y, acc.z);
-          });
-          const orientHandle = await Motion.addListener('orientation', (event) => {
-            handleOrientation(forwardHeading(event.alpha, event.beta, event.gamma));
-          });
-          listenersRef.current.push(accelHandle, orientHandle);
-        } else {
-          const webAccel = (e: DeviceMotionEvent) => {
-            const acc = e.accelerationIncludingGravity || e.acceleration;
-            if (acc) handleAccel(acc.x, acc.y, acc.z);
-          };
-          const webOrient = (e: DeviceOrientationEvent) => {
-            const ios = (e as any).webkitCompassHeading;
-            handleOrientation(typeof ios === 'number' ? ios : forwardHeading(e.alpha, e.beta, e.gamma));
-          };
-          window.addEventListener('devicemotion', webAccel);
-          window.addEventListener('deviceorientation', webOrient);
-          listenersRef.current.push({
-            remove: () => {
-              window.removeEventListener('devicemotion', webAccel);
-              window.removeEventListener('deviceorientation', webOrient);
-            }
-          });
-        }
+        // Plain DOM listeners on every platform (@capacitor/motion is only a wrapper
+        // over these). Step detection needs gravity included: `acceleration` has it
+        // removed, so its magnitude never crosses the 1.14 g threshold.
+        const onMotion = (e: DeviceMotionEvent) => {
+          const acc = e.accelerationIncludingGravity;
+          if (acc) handleAccel(acc.x ?? null, acc.y ?? null, acc.z ?? null);
+        };
+        // Android's WebView never fires 'deviceorientation', only the compass-referenced
+        // 'deviceorientationabsolute'. Prefer absolute once seen, so the two reference
+        // frames are never mixed.
+        let sawAbsolute = false;
+        const onAbsolute = (e: DeviceOrientationEvent) => {
+          sawAbsolute = true;
+          handleOrientation(forwardHeading(e.alpha, e.beta, e.gamma));
+        };
+        const onRelative = (e: DeviceOrientationEvent) => {
+          if (sawAbsolute) return;
+          const ios = (e as any).webkitCompassHeading;
+          handleOrientation(typeof ios === 'number' ? ios : forwardHeading(e.alpha, e.beta, e.gamma));
+        };
+        window.addEventListener('devicemotion', onMotion);
+        window.addEventListener('deviceorientationabsolute' as any, onAbsolute);
+        window.addEventListener('deviceorientation', onRelative);
+        listenersRef.current.push({
+          remove: () => {
+            window.removeEventListener('devicemotion', onMotion);
+            window.removeEventListener('deviceorientationabsolute' as any, onAbsolute);
+            window.removeEventListener('deviceorientation', onRelative);
+          },
+        });
       } catch (err) {
         console.warn('Motion sensor attach failed', err);
       }
@@ -178,7 +178,9 @@ export function useDeadReckoning(opts: { active: boolean; initialStride?: number
       
       const now = Date.now();
       const hasAccel = now - lastMotionRef.current < 2000;
-      const hasOrient = now - lastOrientationRef.current < 2000;
+      // Orientation events only fire when the reading changes; a phone lying still can go
+      // silent indefinitely, so any reading since attaching means the compass works.
+      const hasOrient = lastOrientationRef.current > 0;
 
       if (hasAccel && hasOrient) {
         setQuality('GOOD');

@@ -11,10 +11,11 @@
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^8.3.0",
+    "@capacitor-community/keep-awake": "^8.0.1",
     "@capacitor/android": "^8.5.2",
     "@capacitor/core": "^8.5.2",
-    "@capacitor/motion": "^8.0.1",
     "lucide-react": "^0.469.0",
+    "proximity-haptics": "file:plugins/proximity-haptics",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Contact } from '../lib/useScanner';
 import { useClicker } from '../lib/useClicker';
 import { useTrail } from '../lib/useTrail';
-import { SignalStats, SearchMode } from '../lib/signal';
+import { SignalStats, SearchMode, DEFAULT_REF_POWER } from '../lib/signal';
 import { Tape } from '../components/Tape';
 import { TrackMap } from '../components/TrackMap';
 import { relativeBearing, distanceTo, steer } from '../lib/breadcrumbs';
@@ -47,8 +47,10 @@ export const HuntScreen: React.FC<Props> = ({
   }, []);
 
   // Audio / Haptic feedback engine
+  // Cadence follows closeness, not raw dBm: shift by this device's 1 m reference so a
+  // quiet tag at arm's length clicks like a loud phone at arm's length.
   useClicker({
-    rssi: stats.filtered,
+    rssi: stats.filtered - (stats.refPower - DEFAULT_REF_POWER),
     active: !stats.isStale && (audioEnabled || hapticsEnabled),
     sound: audioEnabled,
     haptics: hapticsEnabled,
@@ -145,7 +147,18 @@ export const HuntScreen: React.FC<Props> = ({
     return 'var(--c-danger)';
   };
 
-  const signalColor = getSignalColor(stats.filtered);
+  // Colour follows the distance estimate (which knows this device's 1 m power), so the
+  // colour and the proximity label never disagree.
+  const signalColor =
+    stats.proximity === 'VERY CLOSE'
+      ? 'var(--c-success)'
+      : stats.proximity === 'NEARBY'
+      ? 'var(--c-primary)'
+      : stats.proximity === 'MID RANGE'
+      ? 'var(--c-warning)'
+      : stats.proximity === 'FAR'
+      ? 'var(--c-danger)'
+      : getSignalColor(stats.filtered);
 
   const MODES: { value: SearchMode; label: string; desc: string }[] = [
     { value: 'QUICK_SEARCH', label: 'Quick Scout', desc: 'Fast reaction' },
@@ -164,6 +177,7 @@ export const HuntScreen: React.FC<Props> = ({
           backgroundColor: 'var(--c-surface)',
           borderBottom: '1px solid var(--c-border)',
           padding: '12px 16px',
+          paddingTop: 'calc(12px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)))',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -293,8 +307,12 @@ export const HuntScreen: React.FC<Props> = ({
               <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--c-text-muted)' }}>
                 {id}
               </span>
-              <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>•</span>
-              <span style={{ fontSize: '12px', color: 'var(--c-text-muted)' }}>{kind}</span>
+              {kind !== 'Bluetooth Device' && (
+                <>
+                  <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>•</span>
+                  <span style={{ fontSize: '12px', color: 'var(--c-text-muted)' }}>{kind}</span>
+                </>
+              )}
             </div>
           </div>
 

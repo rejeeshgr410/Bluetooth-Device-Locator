@@ -17,6 +17,8 @@ export type ScanCallback = (device: BluetoothDeviceRaw) => void;
 
 let isNativeInitialized = false;
 
+const SCAN_REFRESH_MS = 20000;
+
 export const bluetoothService = {
   async init(): Promise<void> {
     if (Capacitor.isNativePlatform() && !isNativeInitialized) {
@@ -80,25 +82,49 @@ export const bluetoothService = {
 
       // 3. Highest duty-cycle scan with every duplicate packet reported. BALANCED (the
       //    default) delivers a fraction of the packets, which starves the filter.
-      await BleClient.requestLEScan(
-        { allowDuplicates: true, scanMode: ScanMode.SCAN_MODE_LOW_LATENCY },
-        (result: ScanResult) => {
-          // 127 means "not available" on Android; a missing RSSI is not -100 dBm.
-          if (typeof result.rssi !== 'number' || result.rssi >= 0) return;
-          const { name, kind, isGuessed } = resolveDeviceIdentity(result);
-          onResult({
-            id: result.device.deviceId,
-            name,
-            kind,
-            rssi: result.rssi,
-            txPower: result.txPower ?? undefined,
-            refPower: extractReferencePower(result),
-            isGuessed,
-          });
-        },
-      );
+      const onScan = (result: ScanResult) => {
+        // 127 means "not available" on Android; a missing RSSI is not -100 dBm.
+        if (typeof result.rssi !== 'number' || result.rssi >= 0) return;
+        const { name, kind, isGuessed } = resolveDeviceIdentity(result);
+        onResult({
+          id: result.device.deviceId,
+          name,
+          kind,
+          rssi: result.rssi,
+          txPower: result.txPower ?? undefined,
+          refPower: extractReferencePower(result),
+          isGuessed,
+        });
+      };
+      const begin = () =>
+        BleClient.requestLEScan({ allowDuplicates: true, scanMode: ScanMode.SCAN_MODE_LOW_LATENCY }, onScan);
+      await begin();
+
+      // Measured on a Pixel 8 Pro: one long continuous scan goes quietly deaf within
+      // minutes (18 devices -> 1, and the hunted target reads SIGNAL LOST) while Android
+      // still reports it as running. Restarting brings everything back at once. Every
+      // 20 s stays well under Android's limit of 5 scan starts per 30 s, and also
+      // avoids the 30-minute downgrade to opportunistic scanning.
+      let stopped = false;
+      let restarting = false;
+      const refresh = window.setInterval(async () => {
+        if (stopped || restarting) return;
+        restarting = true;
+        try {
+          await BleClient.stopLEScan();
+          if (!stopped) await begin();
+          // stop() may have run while begin() was in flight
+          if (stopped) await BleClient.stopLEScan();
+        } catch (err) {
+          console.warn('BLE scan refresh failed', err);
+        } finally {
+          restarting = false;
+        }
+      }, SCAN_REFRESH_MS);
 
       return () => {
+        stopped = true;
+        window.clearInterval(refresh);
         BleClient.stopLEScan().catch(console.error);
       };
     } else {

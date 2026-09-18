@@ -14,6 +14,15 @@ export type Contact = {
 // Per-device "RSSI at 1 m", measured by the user. Survives restarts.
 const CALIBRATION_KEY = 'bt-locator.calibration.v1';
 
+/**
+ * Phones, earbuds and PCs rotate their address every few minutes (seen on a real hunt:
+ * four addresses in 30 min for one PC), so a device with a real advertised name is
+ * calibrated by name. Guessed labels include the address, so those fall back to it.
+ */
+function calibrationKey(id: string, name: string, isGuessed: boolean): string {
+  return isGuessed ? id : `name:${name}`;
+}
+
 function loadCalibrations(): Record<string, number> {
   try {
     const raw = localStorage.getItem(CALIBRATION_KEY);
@@ -91,9 +100,12 @@ export function useScanner() {
     let engine = engines.current[device.id];
     if (!engine) {
       engine = new SignalEngine(modeRef.current);
-      const calibrated = calibrations.current[device.id];
-      if (calibrated !== undefined) engine.setReferencePower(calibrated, 'calibrated');
       engines.current[device.id] = engine;
+    }
+    // Checked on every packet: a real name can arrive after the first packets
+    const calibrated = calibrations.current[calibrationKey(device.id, device.name, device.isGuessed)];
+    if (calibrated !== undefined && engine.getStats()?.refSource !== 'calibrated') {
+      engine.setReferencePower(calibrated, 'calibrated');
     }
     if (device.refPower !== undefined) engine.setReferencePower(device.refPower, 'advertised');
 
@@ -120,8 +132,10 @@ export function useScanner() {
   const calibrate = useCallback((id: string): number | null => {
     const engine = engines.current[id];
     const ref = engine?.calibrateAtOneMetre() ?? null;
-    if (ref !== null) {
-      calibrations.current = { ...calibrations.current, [id]: ref };
+    const contact = store.current[id];
+    if (ref !== null && contact) {
+      const key = calibrationKey(id, contact.name, contact.isGuessed);
+      calibrations.current = { ...calibrations.current, [key]: ref };
       saveCalibrations(calibrations.current);
     }
     return ref;

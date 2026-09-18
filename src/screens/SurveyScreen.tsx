@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Contact } from '../lib/useScanner';
 import { ThemeMode } from '../lib/theme';
 
@@ -29,6 +29,9 @@ export const SurveyScreen: React.FC<Props> = ({
 }) => {
   const [filter, setFilter] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  // Sort key per device that only moves when the signal really changes (> 6 dB), so
+  // rows don't swap places under your finger as readings jitter.
+  const sortScore = useRef<Map<string, number>>(new Map());
 
   const rows = useMemo(() => {
     let arr = Object.values(contacts);
@@ -49,13 +52,16 @@ export const SurveyScreen: React.FC<Props> = ({
       });
     }
 
-    // Strongest first, but in 4 dB steps so rows don't reshuffle on every noisy
-    // packet while you are trying to tap one. Stale devices sink to the bottom.
-    const bucket = (c: Contact) => Math.round(c.stats.filtered / 4);
+    // Strongest first; stale devices sink to the bottom.
+    const scores = sortScore.current;
+    for (const c of arr) {
+      const prev = scores.get(c.id);
+      if (prev === undefined || Math.abs(c.stats.filtered - prev) > 6) scores.set(c.id, c.stats.filtered);
+    }
     return arr.sort(
       (a, b) =>
         Number(a.stats.isStale) - Number(b.stats.isStale) ||
-        bucket(b) - bucket(a) ||
+        (scores.get(b.id) ?? -127) - (scores.get(a.id) ?? -127) ||
         a.firstSeen - b.firstSeen,
     );
   }, [contacts, filter, selectedCategory]);
@@ -106,7 +112,8 @@ export const SurveyScreen: React.FC<Props> = ({
           zIndex: 20,
           backgroundColor: 'var(--c-surface)',
           borderBottom: '1px solid var(--c-border)',
-          padding: '16px 20px',
+          padding: '16px',
+          paddingTop: 'calc(16px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px)))',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -163,7 +170,7 @@ export const SurveyScreen: React.FC<Props> = ({
       </header>
 
       {/* Main Content Area */}
-      <main style={{ flex: 1, padding: '16px 20px', maxWidth: '800px', width: '100%', margin: '0 auto' }}>
+      <main style={{ flex: 1, padding: '16px', maxWidth: '800px', width: '100%', margin: '0 auto' }}>
         {/* Error / Notice Banners */}
         {error && (
           <div
@@ -453,10 +460,14 @@ export const SurveyScreen: React.FC<Props> = ({
                       <span style={{ fontSize: '11px', color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
                         {item.id}
                       </span>
-                      <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>•</span>
-                      <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>
-                        {item.kind}
-                      </span>
+                      {item.kind !== 'Bluetooth Device' && (
+                        <>
+                          <span style={{ fontSize: '11px', color: 'var(--c-text-muted)' }}>•</span>
+                          <span style={{ fontSize: '11px', color: 'var(--c-text-muted)', whiteSpace: 'nowrap' }}>
+                            {item.kind}
+                          </span>
+                        </>
+                      )}
                     </div>
 
                     {/* Proximity / Distance estimate */}

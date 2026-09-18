@@ -83,6 +83,8 @@ html, body {
 
 #root {
   min-height: 100vh;
+  /* Android 15+ draws the app edge-to-edge; keep content clear of the gesture bar */
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
 }

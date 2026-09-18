@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { ProximityHaptics } from './proximityHaptics';
 import { clickIntervalMs } from './clickInterval';
 import { Trend, Confidence } from './signal';
 
@@ -14,6 +16,7 @@ export function useClicker(opts: {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const clickBufferRef = useRef<AudioBuffer | null>(null);
   const timerRef = useRef<number | null>(null);
+  const lastPulseRef = useRef(0);
   const latestRef = useRef(opts);
   latestRef.current = opts;
 
@@ -64,7 +67,24 @@ export function useClicker(opts: {
           } catch {}
         }
         
-        if (now.haptics && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        // Android stretches a pulse to ~100 ms; faster than this they merge into one buzz
+        const pulseDue = now.haptics && Date.now() - lastPulseRef.current >= 220;
+        if (pulseDue) lastPulseRef.current = Date.now();
+
+        if (pulseDue && Capacitor.isNativePlatform()) {
+          // Native pulse tagged as alarm usage. Haptics.impact()/vibrate() and the WebView's
+          // navigator.vibrate are all classified as touch feedback on Android 13+ and are
+          // dropped when system touch feedback is off (verified on a Pixel 8 Pro).
+          const ms =
+            now.confidence === 'LOW' || now.trend === 'GETTING COLDER'
+              ? 15
+              : now.rssi > -55
+              ? 45
+              : now.rssi > -70
+              ? 30
+              : 20;
+          void ProximityHaptics.pulse({ duration: ms }).catch(() => {});
+        } else if (pulseDue && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
           if (now.confidence === 'LOW') {
             // Signal unstable: intermittent pattern
             navigator.vibrate([10, 50, 10]);

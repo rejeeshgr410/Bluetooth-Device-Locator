@@ -37,20 +37,31 @@ const COMPANY_NAMES: Record<number, string> = {
   0x0131: 'Cypress Semi',
 };
 
-// Well-known BLE Service UUIDs
-const SERVICE_NAMES: Record<string, string> = {
-  'fe2c': 'Google Fast Pair Device',
-  'fe9f': 'Google Home / Nest',
-  '180d': 'Heart Rate Monitor',
-  '180f': 'Battery Service Device',
-  '1812': 'Wireless HID (Mouse/Key)',
-  '180a': 'Device Information Sensor',
-  'fee0': 'Mi Smart Band',
-  'fee7': 'Tencent / WeChat BLE',
-  'feaa': 'Eddystone Beacon',
-  '1802': 'Proximity Alert Tag',
-  '1803': 'Link Loss Tag',
-  'fd6f': 'Exposure Notification',
+// Well-known 16-bit BLE service UUIDs (SIG-assigned), with the device kind they imply
+const SERVICE_NAMES: Record<string, { label: string; kind: string }> = {
+  'fe2c': { label: 'Google Fast Pair Device', kind: 'Earbuds' },
+  'fef3': { label: 'Google Device', kind: 'Bluetooth Device' },
+  'fe9f': { label: 'Google Home / Nest', kind: 'Audio' },
+  'fd5a': { label: 'Samsung SmartTag', kind: 'Tracker' },
+  'fd69': { label: 'Samsung Find Device', kind: 'Tracker' },
+  'feed': { label: 'Tile Tracker', kind: 'Tracker' },
+  'feec': { label: 'Tile Tracker', kind: 'Tracker' },
+  'fe03': { label: 'Amazon Echo / Alexa Device', kind: 'Audio' },
+  'fe07': { label: 'Sonos Speaker', kind: 'Audio' },
+  'fe95': { label: 'Xiaomi Device', kind: 'Bluetooth Device' },
+  'fe59': { label: 'Nordic DFU Device', kind: 'Bluetooth Device' },
+  '184e': { label: 'LE Audio Device', kind: 'Earbuds' },
+  '1850': { label: 'LE Audio Device', kind: 'Earbuds' },
+  '180d': { label: 'Heart Rate Monitor', kind: 'Watch' },
+  '1812': { label: 'Wireless Mouse / Keyboard', kind: 'Bluetooth Device' },
+  'fee0': { label: 'Mi Smart Band', kind: 'Watch' },
+  'fee7': { label: 'Tencent / WeChat BLE', kind: 'Bluetooth Device' },
+  'feaa': { label: 'Eddystone Beacon', kind: 'Tracker' },
+  '1802': { label: 'Proximity Alert Tag', kind: 'Tracker' },
+  '1803': { label: 'Link Loss Tag', kind: 'Tracker' },
+  'fd6f': { label: 'Exposure Notification Phone', kind: 'Phone' },
+  '180f': { label: 'Battery Service Device', kind: 'Bluetooth Device' },
+  '180a': { label: 'Device Information Sensor', kind: 'Bluetooth Device' },
 };
 
 // Runtime cache of resolved device names by device ID (MAC)
@@ -112,48 +123,87 @@ function extractCompanyId(manufacturerData?: Record<string, DataView>): number |
 }
 
 /**
- * Decode Apple-specific manufacturer data sub-types
+ * Apple Continuity: the payload is a sequence of (type, length, value) records.
+ * Walk all of them and keep the most specific. Order = priority.
  */
+const APPLE_TYPES: [number, string, string][] = [
+  [0x12, 'Apple Find My (AirTag or lost Apple device)', 'Tracker'],
+  [0x07, 'Apple AirPods / Beats', 'Earbuds'],
+  [0x02, 'Apple iBeacon', 'Tracker'],
+  [0x0b, 'Apple Watch', 'Watch'],
+  [0x09, 'Apple TV / HomePod (AirPlay)', 'Audio'],
+  [0x06, 'Apple HomeKit Accessory', 'Bluetooth Device'],
+  [0x0c, 'Apple iPhone / iPad / Mac', 'Phone'],
+  [0x10, 'Apple iPhone / iPad / Mac', 'Phone'],
+  [0x0f, 'Apple iPhone / iPad', 'Phone'],
+  [0x05, 'Apple iPhone / iPad / Mac', 'Phone'],
+];
+
 function decodeApplePayload(data?: DataView): { name: string; kind: string } | null {
   if (!data || data.byteLength < 2) return null;
+  const seen = new Set<number>();
   try {
-    const type = data.getUint8(0);
-    switch (type) {
-      case 0x02: // iBeacon
-        return { name: 'Apple iBeacon', kind: 'Tracker' };
-      case 0x05: // AirDrop
-        return { name: 'Apple Device (AirDrop)', kind: 'Phone' };
-      case 0x07: // AirPods / Beats
-      case 0x0f:
-        return { name: 'Apple AirPods / Beats', kind: 'Earbuds' };
-      case 0x10: // Nearby / Find My / AirTag
-        return { name: 'Apple AirTag / Find My Device', kind: 'Tracker' };
-      case 0x12: // Apple Watch
-        return { name: 'Apple Watch', kind: 'Watch' };
-      case 0x09: // AirPlay
-        return { name: 'Apple Audio Device', kind: 'Audio' };
-      default:
-        return { name: 'Apple Device', kind: 'Phone' };
+    let i = 0;
+    while (i + 1 < data.byteLength) {
+      const type = data.getUint8(i);
+      const len = data.getUint8(i + 1);
+      seen.add(type);
+      i += 2 + len;
     }
   } catch {
-    return null;
+    // truncated record; use what we parsed
   }
+  for (const [type, name, kind] of APPLE_TYPES) {
+    if (seen.has(type)) return { name, kind };
+  }
+  return { name: 'Apple Device', kind: 'Bluetooth Device' };
 }
 
-/**
- * Decode Samsung-specific manufacturer data
- */
+/** Samsung's own sub-types aren't documented; don't guess the product. */
 function decodeSamsungPayload(data?: DataView): { name: string; kind: string } | null {
+  if (!data || data.byteLength < 1) return null;
+  return { name: 'Samsung Galaxy Device', kind: 'Bluetooth Device' };
+}
+
+const MICROSOFT_CDP_TYPES: Record<number, [string, string]> = {
+  1: ['Xbox', 'Bluetooth Device'],
+  6: ['iPhone (Microsoft Phone Link)', 'Phone'],
+  7: ['iPad (Microsoft Phone Link)', 'Tablet'],
+  8: ['Android Phone (Phone Link)', 'Phone'],
+  9: ['Windows Desktop PC', 'Laptop'],
+  11: ['Windows Phone', 'Phone'],
+  12: ['Linux PC', 'Laptop'],
+  13: ['Windows IoT Device', 'Bluetooth Device'],
+  14: ['Surface Hub', 'Laptop'],
+  15: ['Windows Laptop', 'Laptop'],
+  16: ['Windows Tablet', 'Tablet'],
+};
+
+/**
+ * Microsoft: 0x01 = Connected Devices Platform beacon (device type in the low bits of
+ * byte 1); 0x03 = Swift Pair, which carries the accessory's display name.
+ */
+function decodeMicrosoftPayload(data?: DataView): { name: string; kind: string; real?: boolean } | null {
   if (!data || data.byteLength < 2) return null;
   try {
-    const sub = data.getUint8(0);
-    if (sub === 0x01 || sub === 0x42 || sub === 0x43) {
-      return { name: 'Samsung Galaxy Buds / Audio', kind: 'Earbuds' };
+    const scenario = data.getUint8(0);
+    if (scenario === 0x01) {
+      const t = MICROSOFT_CDP_TYPES[data.getUint8(1) & 0x1f];
+      if (t) return { name: t[0], kind: t[1] };
     }
-    return { name: 'Samsung Galaxy Device', kind: 'Phone' };
+    if (scenario === 0x03 && data.byteLength > 3) {
+      const sub = data.getUint8(1);
+      const start = sub === 0x01 ? 6 : 3; // 0x01 carries a 3-byte class-of-device first
+      const bytes = new Uint8Array(data.buffer, data.byteOffset + start, Math.max(0, data.byteLength - start));
+      const name = new TextDecoder().decode(bytes).replace(/\0+$/, '').trim();
+      if (name.length >= 2 && /^[\x20-\x7E\u00A0-\uFFFF]+$/.test(name)) {
+        return { name, kind: classifyDeviceKind(name), real: true };
+      }
+    }
   } catch {
-    return null;
+    // malformed
   }
+  return null;
 }
 
 /**
@@ -232,6 +282,17 @@ export function resolveDeviceIdentity(result: ScanResult): { name: string; kind:
         kindCache.set(idUpper, decoded.kind);
         return { name: full, kind: decoded.kind, isGuessed: true };
       }
+    } else if (companyId === 0x0006) { // Microsoft
+      const decoded = decodeMicrosoftPayload(result.manufacturerData?.['6']);
+      if (decoded?.real) {
+        nameCache.set(idUpper, decoded.name);
+        kindCache.set(idUpper, decoded.kind);
+        return { name: decoded.name, kind: decoded.kind, isGuessed: false };
+      }
+      if (decoded) {
+        kindCache.set(idUpper, decoded.kind);
+        return { name: `${decoded.name} ${shortMac}`, kind: decoded.kind, isGuessed: true };
+      }
     } else if (companyId === 0x0075) { // Samsung
       const samsungData = result.manufacturerData ? Object.values(result.manufacturerData)[0] : undefined;
       const decoded = decodeSamsungPayload(samsungData);
@@ -255,14 +316,21 @@ export function resolveDeviceIdentity(result: ScanResult): { name: string; kind:
   if (result.uuids && result.uuids.length > 0) {
     for (const uuid of result.uuids) {
       const short = shortUuid(uuid);
-      for (const [key, label] of Object.entries(SERVICE_NAMES)) {
-        if (short === key) {
-          const full = `${label} ${shortMac}`;
-          const kind = label.includes('Audio') || label.includes('Pair') ? 'Audio' : 'Tracker';
-          kindCache.set(idUpper, kind);
-          return { name: full, kind, isGuessed: true };
-        }
+      const known = short ? SERVICE_NAMES[short] : undefined;
+      if (known) {
+        kindCache.set(idUpper, known.kind);
+        return { name: `${known.label} ${shortMac}`, kind: known.kind, isGuessed: true };
       }
+    }
+  }
+
+  // 5b. Service data keys identify many devices that advertise no UUID list
+  for (const uuid of Object.keys(result.serviceData ?? {})) {
+    const short = shortUuid(uuid);
+    const known = short ? SERVICE_NAMES[short] : undefined;
+    if (known) {
+      kindCache.set(idUpper, known.kind);
+      return { name: `${known.label} ${shortMac}`, kind: known.kind, isGuessed: true };
     }
   }
 

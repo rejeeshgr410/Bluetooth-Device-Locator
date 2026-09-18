@@ -51,10 +51,11 @@ A phone app that finds a lost Bluetooth device (earbuds, tag, watch, phone) by s
 
 ## Verified on a real phone (Pixel 8 Pro, Android 17), don't undo these
 
-- **One long BLE scan goes deaf.** Within minutes the list dropped from 18 devices to 1 and the target read SIGNAL LOST, while Android still reported the scan as running. The 20 s restart in `bluetoothService.ts` fixes it (3-minute test: 0 s lost). Keep restarts under 5 per 30 s (Android's limit).
+- **One long BLE scan goes deaf.** Within minutes the list dropped from 18 devices to 1 and the target read SIGNAL LOST, while Android still reported the scan as running. `bluetoothService.ts` restarts the scan every 20 s, and early (at most every 8 s) when no device at all has been heard for 4 s. Tests: 0 s lost over 5 and 10 minutes; back within 7.5 s after a forced outage. Keep restarts under 5 per 30 s (Android's limit).
 - **Android's WebView never fires `deviceorientation`**, only `deviceorientationabsolute`. Without listening to the latter there is no heading and the trail can't work.
 - **Short vibrations are classified as touch feedback** on Android 13+ and dropped when system touch feedback is off. That applies to `Haptics.impact`, `Haptics.vibrate` and `navigator.vibrate` alike, hence the local plugin with `USAGE_ALARM`.
-- **Edge-to-edge:** Capacitor 8 injects `--safe-area-inset-*` CSS variables; headers and `#root` use them. Without them the header sits under the status bar.
+- **Edge-to-edge:** Capacitor 8 injects `--safe-area-inset-*` CSS variables; headers and `#root` use them. Without them the header sits under the status bar. `theme.ts` also sets `SystemBars` style, otherwise dark mode shows dark status icons on a dark header.
+- **Following an address change works live:** a PC rotated from `73:17…` to `4B:03…` mid-hunt and the app followed without dropping to SIGNAL LOST.
 - **Addresses rotate constantly.** One PC used four addresses in 30 minutes. That's why calibration is keyed by the advertised name when there is one, and App.tsx follows the target to its new address.
 - **Measured stationary performance (real radio):** ~5–6 packets/s per device, raw noise σ ≈ 3–4 dB, filtered σ ≈ 1.5 dB, trend "steady" 94% of the time.
 

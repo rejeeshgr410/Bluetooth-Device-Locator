@@ -57,6 +57,9 @@ A phone app that finds a lost Bluetooth device (earbuds, tag, watch, phone) by s
 - **Edge-to-edge:** Capacitor 8 injects `--safe-area-inset-*` CSS variables; headers and `#root` use them. Without them the header sits under the status bar. `theme.ts` also sets `SystemBars` style, otherwise dark mode shows dark status icons on a dark header.
 - **Following an address change works live:** a PC rotated from `73:17…` to `4B:03…` mid-hunt and the app followed without dropping to SIGNAL LOST.
 - **Addresses rotate constantly.** One PC used four addresses in 30 minutes. That's why calibration is keyed by the advertised name when there is one, and App.tsx follows the target to its new address.
+- **Trend debounce (`TREND_HOLD_MS` = 800 ms in `signal.ts`):** a new warmer/colder direction must hold 0.8 s before it shows. Real radio, phone still, 4 min: false blips 0.4% (3–13% without it). Simulation: stationary 'steady' ~93% (was ~80%), walking detection ~1.2 s later (approach 46% vs 67% of a 9 s walk). Direction is never wrong in either case. Raise it and walking detection gets sluggish (1500 ms halved it).
+- **List order:** stale devices must not be re-sorted to the bottom. Slow advertisers (phones, AirTags) then jump every second (measured ~22 reorders in 40 s; 4 in 60 s after the fix). They are dimmed instead and dropped after 25 s.
+- **First run:** a clean install shows two system prompts (precise location, then Nearby devices) and scanning starts right after; verified.
 - **Measured stationary performance (real radio):** ~5–6 packets/s per device, raw noise σ ≈ 3–4 dB, filtered σ ≈ 1.5 dB, trend "steady" 94% of the time.
 
 ## Testing on the connected phone (adb)

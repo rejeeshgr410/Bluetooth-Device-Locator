@@ -52,7 +52,9 @@ export const SurveyScreen: React.FC<Props> = ({
       });
     }
 
-    // Strongest first; stale devices sink to the bottom.
+    // Strongest first. Stale devices keep their place (they are dimmed, and dropped after
+    // 25 s): phones and tags advertise slowly, so sinking them on every quiet spell made
+    // rows jump about every second on a real phone.
     const scores = sortScore.current;
     for (const c of arr) {
       const prev = scores.get(c.id);
@@ -60,9 +62,9 @@ export const SurveyScreen: React.FC<Props> = ({
     }
     return arr.sort(
       (a, b) =>
-        Number(a.stats.isStale) - Number(b.stats.isStale) ||
         (scores.get(b.id) ?? -127) - (scores.get(a.id) ?? -127) ||
-        a.firstSeen - b.firstSeen,
+        a.firstSeen - b.firstSeen ||
+        (a.id < b.id ? -1 : 1),
     );
   }, [contacts, filter, selectedCategory]);
 

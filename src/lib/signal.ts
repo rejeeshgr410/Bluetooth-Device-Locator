@@ -53,6 +53,7 @@ const PATH_LOSS_N_LOW = 2.0;
 const PATH_LOSS_N_MID = 2.5;
 const PATH_LOSS_N_HIGH = 3.0;
 
+const TREND_HOLD_MS = 800;
 const RAW_KEEP_MS = 12000;
 const NOISE_WINDOW_MS = 3000;
 const HISTORY_BINS = 60;
@@ -84,6 +85,8 @@ export class SignalEngine {
   private initialized = false;
   private outlierRun = 0;
   private lastTrend: Trend = 'UNCERTAIN';
+  private shownTrend: Trend = 'UNCERTAIN';
+  private candidateSince = 0;
   private peakRssi = -127;
   private peakAt = 0;
   private refPower = DEFAULT_REF_POWER;
@@ -240,7 +243,28 @@ export class SignalEngine {
     const trend: Trend =
       Math.abs(slope) >= needSlope && Math.abs(delta) >= needDelta && tStat >= needT ? direction : 'STABLE';
     this.lastTrend = trend;
-    return { trend, slope, delta };
+    return { trend: this.debounce(trend, now), slope, delta };
+  }
+
+  /**
+   * A new direction must hold for TREND_HOLD_MS before it is shown. On a real phone a
+   * stationary target still produced 1-2 s false WARMER/COLDER blips (its RSSI alternates
+   * ~4 dB between advertising channels); this hides them. Falling back to STEADY is
+   * immediate, so a real change is never held on screen longer than it lasts.
+   */
+  private debounce(trend: Trend, now: number): Trend {
+    if (trend === this.shownTrend || trend === 'STABLE' || trend === 'UNCERTAIN') {
+      this.shownTrend = trend;
+      this.candidateSince = 0;
+      return trend;
+    }
+    if (this.candidateSince === 0) this.candidateSince = now;
+    if (now - this.candidateSince >= TREND_HOLD_MS) {
+      this.shownTrend = trend;
+      this.candidateSince = 0;
+      return trend;
+    }
+    return this.shownTrend === 'GETTING WARMER' || this.shownTrend === 'GETTING COLDER' ? 'STABLE' : this.shownTrend;
   }
 
   private buildStats(now: number, raw: number, sigma = 6): SignalStats {

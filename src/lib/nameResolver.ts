@@ -229,7 +229,6 @@ export function resolveDeviceIdentity(result: ScanResult): { name: string; kind:
       const decoded = decodeApplePayload(appleData);
       if (decoded) {
         const full = `${decoded.name} ${shortMac}`;
-        nameCache.set(idUpper, full);
         kindCache.set(idUpper, decoded.kind);
         return { name: full, kind: decoded.kind, isGuessed: true };
       }
@@ -238,7 +237,6 @@ export function resolveDeviceIdentity(result: ScanResult): { name: string; kind:
       const decoded = decodeSamsungPayload(samsungData);
       if (decoded) {
         const full = `${decoded.name} ${shortMac}`;
-        nameCache.set(idUpper, full);
         kindCache.set(idUpper, decoded.kind);
         return { name: full, kind: decoded.kind, isGuessed: true };
       }
@@ -248,7 +246,6 @@ export function resolveDeviceIdentity(result: ScanResult): { name: string; kind:
     if (companyName) {
       const full = `${companyName} Device ${shortMac}`;
       const kind = companyName.includes('Audio') ? 'Audio' : 'Bluetooth Device';
-      nameCache.set(idUpper, full);
       kindCache.set(idUpper, kind);
       return { name: full, kind, isGuessed: true };
     }
@@ -257,12 +254,11 @@ export function resolveDeviceIdentity(result: ScanResult): { name: string; kind:
   // 5. Decode Advertised Service UUIDs
   if (result.uuids && result.uuids.length > 0) {
     for (const uuid of result.uuids) {
-      const cleanUuid = uuid.toLowerCase().replace(/-/g, '');
+      const short = shortUuid(uuid);
       for (const [key, label] of Object.entries(SERVICE_NAMES)) {
-        if (cleanUuid.includes(key)) {
+        if (short === key) {
           const full = `${label} ${shortMac}`;
           const kind = label.includes('Audio') || label.includes('Pair') ? 'Audio' : 'Tracker';
-          nameCache.set(idUpper, full);
           kindCache.set(idUpper, kind);
           return { name: full, kind, isGuessed: true };
         }
@@ -273,4 +269,45 @@ export function resolveDeviceIdentity(result: ScanResult): { name: string; kind:
   // 6. Final Clean Fallback: Clean Tag with formatted MAC address
   const fallback = `Bluetooth Device ${shortMac}`;
   return { name: fallback, kind: 'Bluetooth Device', isGuessed: true };
+}
+
+/** "0000180f-0000-1000-8000-00805f9b34fb" -> "180f"; custom 128-bit UUIDs -> null. */
+function shortUuid(uuid: string): string | null {
+  const u = uuid.toLowerCase();
+  if (/^[0-9a-f]{4}$/.test(u)) return u;
+  const m = /^0000([0-9a-f]{4})-0000-1000-8000-00805f9b34fb$/.exec(u);
+  return m ? m[1] : null;
+}
+
+/**
+ * Expected RSSI at 1 m, when the advertisement tells us.
+ * - iBeacon carries a calibrated "measured power" byte.
+ * - Eddystone UID/URL carry TX power at 0 m; free-space loss to 1 m at 2.4 GHz is ~41 dB.
+ * - The generic TX Power Level field is power at the antenna, same 41 dB correction.
+ */
+export function extractReferencePower(result: ScanResult): number | undefined {
+  try {
+    const apple = result.manufacturerData?.['76'];
+    if (apple && apple.byteLength >= 23 && apple.getUint8(0) === 0x02 && apple.getUint8(1) === 0x15) {
+      const measured = apple.getInt8(22);
+      if (measured < -20 && measured > -110) return measured;
+    }
+
+    if (result.serviceData) {
+      for (const [uuid, data] of Object.entries(result.serviceData)) {
+        if (shortUuid(uuid) !== 'feaa' || data.byteLength < 2) continue;
+        const frame = data.getUint8(0);
+        if (frame === 0x00 || frame === 0x10) {
+          const tx0 = data.getInt8(1);
+          if (tx0 > -100 && tx0 < 20) return tx0 - 41;
+        }
+      }
+    }
+
+    const tx = result.txPower;
+    if (typeof tx === 'number' && tx !== 127 && tx > -30 && tx < 21) return tx - 41;
+  } catch {
+    // malformed payload
+  }
+  return undefined;
 }

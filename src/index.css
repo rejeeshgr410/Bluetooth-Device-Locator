@@ -165,3 +165,12 @@ input {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--c-text-muted);
 }
+
+/* Proximity halo: stays centred and faint so it never covers the reading */
+@keyframes halo {
+  0%, 100% { transform: translate(-50%, -50%) scale(0.92); opacity: 0.05; }
+  50% { transform: translate(-50%, -50%) scale(1.08); opacity: 0.12; }
+}
+.halo-anim {
+  animation: halo 2s ease-in-out infinite;
+}

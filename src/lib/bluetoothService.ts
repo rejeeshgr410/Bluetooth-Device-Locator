@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
-import { BleClient, ScanResult } from '@capacitor-community/bluetooth-le';
-import { refreshBondedDevices, resolveDeviceIdentity } from './nameResolver';
+import { BleClient, ScanMode, ScanResult } from '@capacitor-community/bluetooth-le';
+import { extractReferencePower, refreshBondedDevices, resolveDeviceIdentity } from './nameResolver';
 
 export type BluetoothDeviceRaw = {
   id: string;
@@ -8,6 +8,8 @@ export type BluetoothDeviceRaw = {
   kind: string;
   rssi: number;
   txPower?: number;
+  /** Expected RSSI at 1 m, from iBeacon / Eddystone / TX Power Level if advertised. */
+  refPower?: number;
   isGuessed: boolean;
 };
 
@@ -76,18 +78,25 @@ export const bluetoothService = {
         console.warn('Android location service is off. Some BLE devices may not be detected.');
       }
 
-      // 3. Start high-frequency scan with duplicate packets enabled
-      await BleClient.requestLEScan({ allowDuplicates: true }, (result: ScanResult) => {
-        const { name, kind, isGuessed } = resolveDeviceIdentity(result);
-        onResult({
-          id: result.device.deviceId,
-          name,
-          kind,
-          rssi: result.rssi ?? -100,
-          txPower: result.txPower ?? undefined,
-          isGuessed,
-        });
-      });
+      // 3. Highest duty-cycle scan with every duplicate packet reported. BALANCED (the
+      //    default) delivers a fraction of the packets, which starves the filter.
+      await BleClient.requestLEScan(
+        { allowDuplicates: true, scanMode: ScanMode.SCAN_MODE_LOW_LATENCY },
+        (result: ScanResult) => {
+          // 127 means "not available" on Android; a missing RSSI is not -100 dBm.
+          if (typeof result.rssi !== 'number' || result.rssi >= 0) return;
+          const { name, kind, isGuessed } = resolveDeviceIdentity(result);
+          onResult({
+            id: result.device.deviceId,
+            name,
+            kind,
+            rssi: result.rssi,
+            txPower: result.txPower ?? undefined,
+            refPower: extractReferencePower(result),
+            isGuessed,
+          });
+        },
+      );
 
       return () => {
         BleClient.stopLEScan().catch(console.error);

@@ -11,6 +11,32 @@ const STEP_THRESHOLD = 1.14;   // g, peak of a walking bounce
 const STEP_MIN_GAP_MS = 260;   // faster than this is noise
 const STEP_MAX_GAP_MS = 2200;  // slower than this and you stopped walking
 
+/**
+ * Heading (clockwise degrees) of the direction the user is facing, from W3C device
+ * orientation. Alpha alone is only right when the phone lies flat, and it runs
+ * counter-clockwise; held tilted in front of you, the horizontal projection of the
+ * back of the phone is the direction you are walking.
+ */
+export function forwardHeading(
+  alpha: number | null | undefined,
+  beta: number | null | undefined,
+  gamma: number | null | undefined,
+): number | null {
+  if (alpha === null || alpha === undefined) return null;
+  const rad = Math.PI / 180;
+  const x = (beta ?? 0) * rad;
+  const y = (gamma ?? 0) * rad;
+  const z = alpha * rad;
+  const vx = -Math.cos(z) * Math.sin(y) - Math.sin(z) * Math.sin(x) * Math.cos(y);
+  const vy = -Math.sin(z) * Math.sin(y) + Math.cos(z) * Math.sin(x) * Math.cos(y);
+  if (Math.hypot(vx, vy) < 0.35) {
+    // Close to flat: the top edge of the phone points forward.
+    return (360 - alpha) % 360;
+  }
+  const deg = (Math.atan2(vx, vy) * 180) / Math.PI;
+  return (deg + 360) % 360;
+}
+
 export function useDeadReckoning(opts: { active: boolean; initialStride?: number }) {
   const { active, initialStride = 0.72 } = opts;
   const [fix, setFix] = useState<Fix>({ x: 0, y: 0, heading: 0, steps: 0 });
@@ -74,11 +100,14 @@ export function useDeadReckoning(opts: { active: boolean; initialStride?: number
 
       try {
         if (Capacitor.isNativePlatform()) {
+          // Step detection needs gravity included: `acceleration` has it removed, so its
+          // magnitude sits near 0 g and never crosses the 1.14 g step threshold.
           const accelHandle = await Motion.addListener('accel', (event) => {
-            handleAccel(event.acceleration.x, event.acceleration.y, event.acceleration.z);
+            const acc = event.accelerationIncludingGravity;
+            handleAccel(acc.x, acc.y, acc.z);
           });
           const orientHandle = await Motion.addListener('orientation', (event) => {
-            handleOrientation(event.alpha);
+            handleOrientation(forwardHeading(event.alpha, event.beta, event.gamma));
           });
           listenersRef.current.push(accelHandle, orientHandle);
         } else {
@@ -87,13 +116,8 @@ export function useDeadReckoning(opts: { active: boolean; initialStride?: number
             if (acc) handleAccel(acc.x, acc.y, acc.z);
           };
           const webOrient = (e: DeviceOrientationEvent) => {
-            let deg = e.alpha;
-            if ((e as any).webkitCompassHeading !== undefined) {
-              deg = (e as any).webkitCompassHeading;
-            } else if (deg !== null) {
-              deg = (360 - deg) % 360;
-            }
-            handleOrientation(deg);
+            const ios = (e as any).webkitCompassHeading;
+            handleOrientation(typeof ios === 'number' ? ios : forwardHeading(e.alpha, e.beta, e.gamma));
           };
           window.addEventListener('devicemotion', webAccel);
           window.addEventListener('deviceorientation', webOrient);

@@ -49,8 +49,15 @@ export const SurveyScreen: React.FC<Props> = ({
       });
     }
 
-    // Sort by signal strength (strongest first)
-    return arr.sort((a, b) => b.stats.filtered - a.stats.filtered);
+    // Strongest first, but in 4 dB steps so rows don't reshuffle on every noisy
+    // packet while you are trying to tap one. Stale devices sink to the bottom.
+    const bucket = (c: Contact) => Math.round(c.stats.filtered / 4);
+    return arr.sort(
+      (a, b) =>
+        Number(a.stats.isStale) - Number(b.stats.isStale) ||
+        bucket(b) - bucket(a) ||
+        a.firstSeen - b.firstSeen,
+    );
   }, [contacts, filter, selectedCategory]);
 
   const categories = [
@@ -454,7 +461,11 @@ export const SurveyScreen: React.FC<Props> = ({
 
                     {/* Proximity / Distance estimate */}
                     <div style={{ fontSize: '12px', fontWeight: 600, color: signalColor, marginTop: '4px' }}>
-                      {item.stats.proximity} ({item.stats.approxDistance})
+                      {stale
+                        ? 'Not heard recently'
+                        : item.stats.distanceHighM < 0.5
+                        ? `${item.stats.proximity} · < 0.5 m`
+                        : `${item.stats.proximity} · ≈ ${item.stats.distanceM < 10 ? item.stats.distanceM.toFixed(1) : Math.round(item.stats.distanceM)} m`}
                     </div>
                   </div>
 

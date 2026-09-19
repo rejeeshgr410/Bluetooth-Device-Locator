@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Contact } from '../lib/useScanner';
-import { ThemeMode } from '../lib/theme';
+import { ThemeMode, proximityColor } from '../lib/theme';
 
 type Props = {
   contacts: Record<string, Contact>;
@@ -95,13 +95,6 @@ export const SurveyScreen: React.FC<Props> = ({
       default:
         return '📶';
     }
-  };
-
-  const getSignalColor = (rssi: number) => {
-    if (rssi >= -55) return 'var(--c-success)';
-    if (rssi >= -70) return 'var(--c-primary)';
-    if (rssi >= -82) return 'var(--c-warning)';
-    return 'var(--c-danger)';
   };
 
   return (
@@ -384,7 +377,8 @@ export const SurveyScreen: React.FC<Props> = ({
           ) : (
             rows.map((item) => {
               const stale = item.stats.isStale;
-              const signalColor = getSignalColor(item.stats.filtered);
+              // Same colour rule as the hunt screen: closeness, not raw dBm
+              const signalColor = proximityColor(item.stats.proximity);
 
               return (
                 <div

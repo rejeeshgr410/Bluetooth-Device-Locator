@@ -32,13 +32,14 @@ A phone app that finds a lost Bluetooth device (earbuds, tag, watch, phone) by s
 | `src/lib/useScanner.ts` | Owns all engines, stale/lost housekeeping, search mode, per-device 1 m calibration (localStorage key `bt-locator.calibration.v1`), pinning of the hunted device. |
 | `src/App.tsx` | Screen switch; follows the target when its Bluetooth address rotates (same real name, exactly one candidate). |
 | `src/lib/useDeadReckoning.ts` | Step detection + heading (`forwardHeading`). |
-| `src/lib/breadcrumbs.ts`, `src/lib/useTrail.ts` | Peak marks, weighted-centroid estimate, steering sentence. |
+| `src/lib/breadcrumbs.ts`, `src/lib/useTrail.ts` | Peak marks; target estimate = multilateration of each mark's distance ring when the marks spread ≥ 0.2 m across their main line, weighted centroid otherwise; steering sentence. |
 | `src/lib/useClicker.ts`, `src/lib/clickInterval.ts` | Click / vibration cadence (cadence uses RSSI normalised by the device's 1 m reference). |
 | `src/lib/proximityHaptics.ts`, `plugins/proximity-haptics/` | Native vibration with alarm usage (see below). |
 | `src/lib/useWakeLock.ts` | Keeps the screen on while scanning (KeepAwake natively, Wake Lock API on web). |
 | `src/screens/SurveyScreen.tsx`, `src/screens/HuntScreen.tsx` | The two screens. |
 | `src/components/Tape.tsx`, `src/components/TrackMap.tsx` | Signal trace and trail map (plain DOM, no chart library). |
-| `scripts/simulate-signal.ts` | Offline accuracy check; run with `npm run sim`. |
+| `scripts/simulate-signal.ts` | Offline accuracy check of trend and distance; run with `npm run sim`. |
+| `scripts/simulate-trail.ts` | Offline accuracy check of the Trail estimate (walked loops, compass drift, stride error); `npm run sim:trail`, `SEED=…` and `HARSH=1` for variants. |
 
 ## Hard facts: don't design around them being false
 
@@ -72,7 +73,7 @@ A phone app that finds a lost Bluetooth device (earbuds, tag, watch, phone) by s
 ## Rules
 
 - **Accuracy is the product.** Any change to `signal.ts`, `breadcrumbs.ts`, `useDeadReckoning.ts` or `clickInterval.ts` must:
-  1. run `npm run sim` before **and** after, and
+  1. run `npm run sim` (and `npm run sim:trail` for trail code) before **and** after, and
   2. report both tables in your final message.
 
   Don't accept a change that raises the wrong-direction rate (colder while approaching, warmer while retreating) above ~2%, or drops "steady" while stationary below ~75%, unless you say explicitly why.

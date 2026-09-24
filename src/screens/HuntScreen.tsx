@@ -6,7 +6,7 @@ import { SignalStats, SearchMode, DEFAULT_REF_POWER } from '../lib/signal';
 import { Tape } from '../components/Tape';
 import { TrackMap } from '../components/TrackMap';
 import { relativeBearing, distanceTo, steer } from '../lib/breadcrumbs';
-import { ThemeMode } from '../lib/theme';
+import { ThemeMode, proximityColor } from '../lib/theme';
 
 type Props = {
   contact: Contact;
@@ -73,6 +73,7 @@ export const HuntScreen: React.FC<Props> = ({
     clear: clearTrail,
   } = useTrail({
     rssi: stats.isStale ? null : stats.filtered,
+    refPower: stats.refPower, // lets each mark's distance ring use calibration
     active: true,
     stride: 0.75,
   });
@@ -96,6 +97,9 @@ export const HuntScreen: React.FC<Props> = ({
     }
     if (stats.proximity === 'VERY CLOSE') {
       return "🎯 Within arm's reach. Look down, under, behind and inside things: cushions, bags, pockets, drawers. Switch to Precision mode.";
+    }
+    if (stats.confidence === 'LOW') {
+      return 'Signal is noisy. Hold the phone out in front of you, not in a pocket or against your body (a body can block about 10 dB), and move slowly.';
     }
     if (belowPeak >= 8 && stats.peakAt > 0) {
       return `↩ You are ${Math.round(belowPeak)} dB below the strongest reading (${peakAgoS}s ago). Retrace your steps to where it peaked, then try a different direction.`;
@@ -140,25 +144,9 @@ export const HuntScreen: React.FC<Props> = ({
   const steering =
     crumbs.length >= 2 ? steer(relativeBearing(fix, estimate), distanceTo(fix, estimate)) : null;
 
-  const getSignalColor = (rssi: number) => {
-    if (rssi >= -55) return 'var(--c-success)';
-    if (rssi >= -70) return 'var(--c-primary)';
-    if (rssi >= -82) return 'var(--c-warning)';
-    return 'var(--c-danger)';
-  };
-
   // Colour follows the distance estimate (which knows this device's 1 m power), so the
   // colour and the proximity label never disagree.
-  const signalColor =
-    stats.proximity === 'VERY CLOSE'
-      ? 'var(--c-success)'
-      : stats.proximity === 'NEARBY'
-      ? 'var(--c-primary)'
-      : stats.proximity === 'MID RANGE'
-      ? 'var(--c-warning)'
-      : stats.proximity === 'FAR'
-      ? 'var(--c-danger)'
-      : getSignalColor(stats.filtered);
+  const signalColor = proximityColor(stats.proximity);
 
   const MODES: { value: SearchMode; label: string; desc: string }[] = [
     { value: 'QUICK_SEARCH', label: 'Quick Scout', desc: 'Fast reaction' },
@@ -503,8 +491,8 @@ export const HuntScreen: React.FC<Props> = ({
           {/* High Precision Signal Meter Bar */}
           <div style={{ width: '100%', marginBottom: '10px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--c-text-muted)', marginBottom: '6px', fontWeight: 600 }}>
-              <span>Weak (-95 dBm)</span>
-              <span>Strong (-35 dBm)</span>
+              <span>Far</span>
+              <span>Arm's reach</span>
             </div>
             <div
               style={{
@@ -528,7 +516,7 @@ export const HuntScreen: React.FC<Props> = ({
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--c-text)' }}>
-                Signal: {stats.percentage}%
+                Closeness: {stats.percentage}%
               </span>
               <span style={{ fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 800, color: signalColor }}>
                 {Math.round(stats.filtered)} dBm

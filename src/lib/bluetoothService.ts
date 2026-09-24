@@ -86,9 +86,9 @@ export const bluetoothService = {
       //    default) delivers a fraction of the packets, which starves the filter.
       let lastResultAt = Date.now();
       const onScan = (result: ScanResult) => {
-        lastResultAt = Date.now();
         // 127 means "not available" on Android; a missing RSSI is not -100 dBm.
         if (typeof result.rssi !== 'number' || result.rssi >= 0) return;
+        lastResultAt = Date.now(); // only usable packets count as "the scan is alive"
         const { name, kind, isGuessed } = resolveDeviceIdentity(result);
         onResult({
           id: result.device.deviceId,

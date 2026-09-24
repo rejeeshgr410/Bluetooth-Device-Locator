@@ -15,7 +15,7 @@ export type SignalStats = {
   filtered: number;
   velocity: number; // dBm per second, least-squares slope over the trend window
   delta: number; // dB gained (+) or lost (-) across the trend window
-  percentage: number; // 0 to 100%
+  percentage: number; // 0 to 100% closeness (RSSI normalised by the 1 m reference)
   approxDistance: string; // Human readable distance estimation
   distanceM: number;
   distanceLowM: number;
@@ -55,6 +55,7 @@ const PATH_LOSS_N_HIGH = 3.0;
 
 const TREND_HOLD_MS = 800;
 const RAW_KEEP_MS = 12000;
+const MAX_BORROW_MS = 4000;
 const NOISE_WINDOW_MS = 3000;
 const HISTORY_BINS = 60;
 const HISTORY_SPAN_MS = 10000;
@@ -177,11 +178,17 @@ export class SignalEngine {
     return this.last;
   }
 
+  /**
+   * Readings since `from`. For slow advertisers the window may hold fewer than
+   * `minCount`, so it borrows older readings, but never from more than MAX_BORROW_MS
+   * before the window, so a device returning after a quiet spell isn't blended with
+   * where it was before.
+   */
   private valuesSince(from: number, minCount: number): number[] {
     const out: number[] = [];
     for (let i = this.raw.length - 1; i >= 0; i--) {
       const s = this.raw[i];
-      if (s.ts < from && out.length >= minCount) break;
+      if (s.ts < from && (out.length >= minCount || s.ts < from - MAX_BORROW_MS)) break;
       out.push(s.rssi);
     }
     return out;
@@ -293,7 +300,10 @@ export class SignalEngine {
       else proximity = 'FAR';
     }
 
-    const percentage = Math.max(0, Math.min(100, Math.round(((filtered + 95) / 60) * 100)));
+    // Closeness, not raw dBm: shift by this device's 1 m reference so a quiet tag at
+    // arm's length fills the meter like a loud phone at arm's length would.
+    const normalized = filtered - (this.refPower - DEFAULT_REF_POWER);
+    const percentage = Math.max(0, Math.min(100, Math.round(((normalized + 95) / 60) * 100)));
 
     const { trend, slope, delta } = this.trend(now, tune);
 

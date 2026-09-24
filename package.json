@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "sim": "esbuild scripts/simulate-signal.ts --bundle --platform=node --outfile=node_modules/.cache/simulate-signal.cjs --log-level=warning && node node_modules/.cache/simulate-signal.cjs"
+    "sim": "esbuild scripts/simulate-signal.ts --bundle --platform=node --outfile=node_modules/.cache/simulate-signal.cjs --log-level=warning && node node_modules/.cache/simulate-signal.cjs",
+    "sim:trail": "esbuild scripts/simulate-trail.ts --bundle --platform=node --outfile=node_modules/.cache/simulate-trail.cjs --log-level=warning && node node_modules/.cache/simulate-trail.cjs"
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^8.3.0",

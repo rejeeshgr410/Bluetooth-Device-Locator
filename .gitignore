@@ -13,3 +13,8 @@ clean*.cjs
 # Gradle output of local Capacitor plugins
 plugins/*/android/build/
 plugins/*/android/.gradle/
+
+# Debug/temporary artefacts
+window_dump.xml
+*.idsig
+*.log

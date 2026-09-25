@@ -20,7 +20,7 @@ A phone app that finds a lost Bluetooth device (earbuds, tag, watch, phone) by s
 - **Bluetooth:** `@capacitor-community/bluetooth-le` (native), with Web Bluetooth as a fallback in browsers.
 - **Motion:** plain DOM `devicemotion` + `deviceorientationabsolute` / `deviceorientation` listeners (no plugin).
 - **Native plugins:** `@capacitor-community/bluetooth-le`, `@capacitor-community/keep-awake`, and the local `plugins/proximity-haptics` (installed as `file:`).
-- **The active app is the repo root.** `files/warmer/` (an Expo/React Native port) and `android-src/` (Kotlin reference code) are older reference material. Don't edit them unless the task says so.
+- **The active app is the repo root.** The older Expo/React Native port (`files/warmer/`) and the Kotlin reference (`android-src/`) were removed; they remain in git history if ever needed (e.g. `git show 39b0f05:files/warmer/src/lib/signal.ts`). The unused `classic-bluetooth` Kotlin module is archived in the commit titled "archive: keep the old Expo classic-bluetooth module source in history".
 
 ## Code map
 
@@ -81,7 +81,7 @@ A phone app that finds a lost Bluetooth device (earbuds, tag, watch, phone) by s
 - **Keep the UI honest.** Show distance as a range, show when data is stale ("SIGNAL LOST", no clicks), and label uncalibrated distances as rough. Silence must mean "no contact", never "no device".
 - **Match the existing style.** Inline styles with the CSS tokens in `src/index.css` (`--c-*`), for both light and dark themes. Don't add a UI framework, router, state library or chart library.
 - **Keep it small.** Don't refactor unrelated code. If you notice an unrelated problem, list it at the end instead of fixing it.
-- **Don't touch** `signing/`, the release `.apk`/`.aab` files, `files.zip`, or anything credential-like. Don't bump dependencies unless the task needs it.
+- **Don't touch** `signing/`, the release `.aab` file, or anything credential-like. Don't bump dependencies unless the task needs it.
 - **Ask before** anything slow or hard to undo: installing tools, changing Android Gradle/SDK settings, deleting files, or pushing.
 
 ## How to verify (every time)
